@@ -1,4 +1,8 @@
 positron-template
 =================
 
-A family of Perl modules for templating and markup
+Positron is a family of Perl modules consisting of
+
+- an HTML/XML templating engine
+- a data-to-data templating engine
+- a markup language
