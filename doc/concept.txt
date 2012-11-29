@@ -1,0 +1,871 @@
+(This is a living document; a stream-of-conciousness work in progress, and as
+such not official documentation)
+
+The idea: build a templating system where the input and the output are perfect
+HTML. Ideally, the input and output should be the complete DOM.
+
+We achieve this by not introducing any new tags, elements or syntax for the
+HTML. On the other hand, the system should be easy to use and instantly
+recognizable. This is done by "hiding" the templating information in
+attributes; turns out we can do this for everything, for example in the
+style.
+
+The templating info has the form
+" { <sigil> <quantifier> <value> } ", only without the spaces.
+Such a form is called a "construct" - "tag" being already taken by HTML/XML
+itself.
+
+UTF8 compatibility: By limiting the sigils, and the delimiters, to the ASCII
+character set, we allow the rest to be latin-X or utf-8, as it wants.
+The templating system strives to be utf-8 compatible.
+
+However, the value-part of a construct may have further restrictions. For
+example, we're restricting identifiers to those rules that apply to
+variables in most programming languages, i.e. /[[:alpha:]_]\w+/.
+
+Delimiters:
+
+The standard delimiters are '{' and '}'. However, for repeated de-templating,
+a different set of delimiters, like '[]' and '()' could be useful (not '<>').
+There needs to be a per-instance way to change the set used.
+For more repeats, or clashes with actual content, see 'literals' below.
+
+Sigil applicability:
+
+So-called "structure sigils" may only appear once per node. This way, when
+we have handled the very first one, we've handled them all, and know the
+structure (this node, children) of the node.
+Structure sigils are loops, conditions, comments, inludes, wraps and functions.
+If an attribute contains only the structure sigil, the attribute is removed.
+Use other things to keep an empty attribute, like {~+}.
+
+So-called "replacement sigils" can appear as often as they want. They do
+not alter the structure of the DOM in any way.
+Replacement sigils replace text and attribute lists.
+(Ok, so the latter does change the structure of the DOM).
+
+Candidate sigils:
+!?@$%.:,;=#^~/  ()[]\|`_
+
+Non-candidate sigils:
+{}+-* these are part of the syntax, or quantifiers
+'"&<> these are part of SGML
+
+Names:
+
+For simplicity and consistency, a "name" which acts as a key in the
+environment is an "identifier", that is a series of letters, digits
+and the underscore, with mixed and significant case, not starting with
+a digit. (UTF-8 compatibility: allow the non-ASCII letters and digits,
+too! Most Unicode-aware regexp libraries should allow this. Check
+Javascript!) This would also allow whitespace around identifiers.
+
+Coercing: various types can be used wrongly, for example using a list
+with the {$}-construct. In this case, we can either croak, warn, or coerce.
+The latter is especially useful for debugging. Coercion rules are given
+in each construct section.
+
+-- THE CONSTRUCTS --
+
+Text replacement:
+
+<a href="{$url}"> - place "url" in the href, unless it's empty or not defined
+                    then remove href.
+<a href="{$+url}"> - keep even if empty or undefined (becomes empty)
+<a href="{$-url}"> - remove if empty or undefined, even if the remainder of
+                     the attribute is not empty!
+
+  The price is {$price}. - Works on text nodes, too.
+
+The difference between the empty string and undef is not strong enough.
+Remove it, and condemn '-' to obscurity? Probably.
+Better use for "-": remove the attribute if the template parameter is
+false, even if the remaining string isn't! A bit strong, but has its uses,
+also as a conditional for strings in attributes.
+Um... and if it's not empty? It gets inserted. So not so good for
+conditionals.
+
+Default values: use another quantifier?
+{$*url*Yes, sir!} (*url:Yes *url|Yes ...)
+This would mean that the "empty string" case cannot really appear, unless
+the default is empty, in which case the template designer put it there.
+Hopefully not as a replacement for '$', let's force a non-separator between
+the separator and the '}'.
+Since we restrict names to identifiers, we can also use a space as the
+separator. But a visual separator would also allow padding with whitespace.
+Default values probably make the strongest case for discerning between the
+empty string, and undef / a non-existing entry, but let's ignore this for
+now.
+Actually, with the restrictions on identifiers, we can use
+{$var:default} or {$var : default} and be happy. This looks like it could
+clash with ':' for loops, but loops can not reasonably take a default value.
+Update: see "ternary expressions" below.
+
+Empty string: looks like '{$}' is a good syntax for something that's
+guaranteed to map to the empty string, or rather '{$ }'? The latter
+seems more likely to generate " ", not "", so the former it is, unless this
+is better handled by comments: probably. Disallow both, then. The only
+use would be for preventing an empty attribute from disappearing.
+Update: see literals for empty strings.
+
+
+Filtering: filtering for HTML *makes no sense* for obvious reasons.
+But other filters, such as URI (percent-encoding) would be nice.
+Use '|' for filtering:
+
+{$ url : index.html | uri | uppercase }
+
+Filtering with parameters: if the filter has a pair of (), treat that as a parameter
+list. We're *not* going to add full-fledged nesting support and stuff (it's a templating
+system, for crying out loud!). We'll add $ resolution in the filter names and in the
+parameters, that's all we can do. Parameters are split on /\s*,\s*/. Those not starting
+with $ are passed verbatim; those starting with $ are resolved from the environment,
+including subselects. Use '$comma' and '$constant_starting_with_dollar' if you need
+these things; we're keeping this Chomsky-3-compatible, i.e. usable with regexes
+(split).
+Update: see "Expressions" below, we're using '`Literal' for literal strings
+Update 2: we're using full-blown expressions for everything. Filters will need to be
+rethought.
+
+If a filter name starts with '$', resolve the subselect to (hopefully!) an anonymous
+function (code ref), and call that with the value so far as the first parameter, and
+the parameters as the remainder. In languages without *easy* variadic parameter lists,
+the parameters from the filter are passed in a list / array, even if empty.
+
+
+Coercion: Lists and Maps are flattened with JSON notation? Code references
+are either displayed or actually called in scalar context.
+Lists with a default value are joined with the default value instead (makes
+this actually useful).
+Note that this applies to scalars '{$}', not loops '{@}', so they can have
+a default value! Let's have lists be joined with ' ' by default.
+No, not good: an empty list would need to resolve to the empty string, whereas
+an undefined list (which is supposed to be the same) would count as an empty
+string, and resolve to the default value. I think one should use filters for
+joining. Or, if we're feeling clever, use '@' to delimit a joiner:
+{$the_list @, }
+(whitespace sensitive) as opposed to:
+{$the_list | join(, )}
+(Argh, how do we pass parameters to filters? How would we pass ", "? Needs to be
+quoted, I guess...) No, see above, use 'join($COMMA)', which should then be the
+default for 'join'.
+Update: "join(`^comma;)"
+
+Subselects:
+{$a.b} would do:
+- list: a[b] (useful only if number).
+- map: a{b}
+- object: a.b()
+- function: (a()).b
+and place the result as the original qualifiers demand.
+
+
+{$a.b.c} would do {$(a.b).c} .
+
+Literals:
+
+To avoid things that look like template commands, we need a syntax for
+'literals'. The most obvious is {'$'} or some such, but I think the apostrophe
+is forbidden in attribute values... Gotta think of something.
+{`$`} is too hard to type... how about {\$} or {/$}? Look like pairs.
+But the first is understandable (and we use the latter for structure comments).
+How does '{\{}' look? Ugly :-P
+"The syntax for text replacement is '{\{}$var}'." - not humanly parseable.
+
+Or: the only thing really worth escaping is the opening '{'. How about '{}' as
+a stand-in for a literal open brace? For example:
+"The syntax for text replacement is '{}$var}'."
+
+Except '{}' might appear too often naturally. '{~}'? '{$}'? '{_}'?
+"The syntax for text replacement is '{~}$var}'."
+"The syntax for text replacement is '{$}$var}'."
+"The syntax for text replacement is '{_}$var}'."
+
+Let's go with '~'. This syntax also goes for '[' and '(', depending on the
+active delimiter, and replaces with that one.
+
+Update: let's have '{~}' evaluate to the empty string. This allows breaking
+would-be template constructs into inactive pieces, while keeping braces
+balanced: 
+"The syntax for text replacement is '{{~}$var}'."
+Since we have a limited repertoire of sigils, the first '{' cannot start
+a template construct, and syntax highlighters and brace balancers remain
+happy.
+
+Whitespace chomping:
+In XML, all whitespace is significant and implies a text node. We *could* offer
+to chomp all text nodes, removing them if empty (not really needed), and since
+'{~}' gets evaluated the very, very last, attach whitespace modifying semantics
+to it. 
+
+Remember that '{~+}' means "keep the attribute, even if the text is empty".
+So that would go for text nodes too, except that an empty text node is no use
+anyway. So:
+
+Text:
+{~}  : evaluate to nothing, text is trimmed as the template wants
+{~+} : evaluate to nothing, but prevent whitespace from being trimmed
+{~-} : trim whitespace even if the template doesn't want to
+{~*} : replace an otherwise pure-whitespace string with a single space
+
+Attributes: 
+{~}  : evaluate to nothing, empty attributes are removed
+{~+} : evaluate to nothing, keep empty attribute
+{~-} : evaluate to nothing, remove whitespace-only attribute
+{~*} : evaluate to nothing, keep attribute as single space (?) as empty string?
+
+Last one wins? Combinations?
+Is it possible to remove ~- and ~* from attributes? People might complain that
+attributes and text nodes behave "one off" otherwise.
+~* is "default" anyway, and ~- will mean "trim in any case", which can also go
+for attributes, no?
+
+Use case: I have a potential attribute with a default value, and I want to
+replace it with an empty string. Or kill the attribute?
+
+<img alt="{$*alt_text*No alt text}{~*}" />
+
+If 'alt_text' is the empty string, "No alt text" is output.
+So it must be a space. Now we differentiate between 'trim and kill' vs.
+'trim and keep'.
+{~-} becomes 'trim and kill', {~*} becomes 'trim and keep' for attributes.
+For pure text, 'trim to nothing' kills, and to keep it, it must be non-empty
+-> {~*}. So this works!
+
+Loops:
+
+<div style="{@list}" > - Replicate the contents of the div for each element of
+                         list, keeping the list (but dropping the attribute).
+{@+list} - keep the div even if the list is empty.
+{@*list} - keep the div for every element of the loop.
+{@-list} - remove the div in any case, replicate only the contents.
+
+What happens with the elements in the list? Maps are the default case, and
+augment/override the environment "blindly". 
+
+In addition, one can designate a target variable like so:
+{@list:var} (whitespace optional)   (or {@list->var}? {@list=>var}? No, '>' needs escaping.
+This places the loop row not in the environment, but in the variable var.
+For example, then the elements of a hash can be found with
+{$var.thing}
+Lists of Scalars allow {$var}.
+
+Generated loop elements: "odd", "even", "first", "last" sound neat. Costs a bit, though.
+
+Coercion:
+- Scalars are single-element lists
+- Maps are the list of their values? Or raise an error? Single-Element list?
+  => single-element list.
+- Objects are an error
+- functions are evaluated
+
+Subselects: as $
+
+Attribute lists:
+
+{%tags} - replace this attribute with key-value lists
+{%+tags} - keep this attribute, even if it doesn't appear in the keys
+           (becomes empty)
+
+Coercion:
+- Functions are evaluated
+- Everything else is an error / coerces to the empty map
+
+Conditions:
+
+<div style="{?cond}" > - Include the div and its contents if cond is true.
+{?+cond} - keep the div even if the cond is false.
+{?-cond} - Do not keep the div, only include the contents if true.
+{?*cond} - keep the contents, but only surround them by div if true.
+
+{!cond} - the same, include on false.
+
+"True" means true for Perl. However, a ref to an empty array is false.
+(If a list would also be "empty")
+
+Truth tables: let the tree be <a id="{...}"><b/></a>. Then we have 16 cases of
+what can be left, 12 if we eliminate symmetrical ones. We have two sigils
+and four quantifiers to work with to fill '...'. Here's what we have:
+
+--,--:    symm
+--,-b: !-
+--,a-:    clears contents
+--,ab: !
+-b,--: ?-
+-b,-b:    symm
+-b,a-:    choice between parent and child
+-b,ab: !*
+a-,--:    clears contents
+a-,-b:    choice between parent and child
+a-,a-:    symm
+a-,ab: !+
+ab,--: ?
+ab,-b: ?*
+ab,a-: ?+
+ab,ab:    symm
+
+Turns out two remaining make no sense, because they wipe the contents in
+any case (why have contents, then), and two make little sense, because
+they toggle between the parent and the child. The rest are actually
+mappable with our syntax!
+
+There is no real else or elsif, nor ands or ors. Deal with it!
+Or... might we not include ands and ors? Well, how? '&' is not an option.
+
+Syntax: since we use identifiers, we can work with boolean logic.
+(Note the whitespace! Increases legibility!)
+{? a + b }  - true if a and b are true
+{? a | b }  - true if a or b are true
+{?+ a + !b } - true if a is true and b is false, but keep the construct node.
+{? a + (b | c) } - true if a is true and (b or c is true).
+{! !(!!a)} - true if... um... a is true?
+
+Should we use '+' for 'and'? It does clash with a quantifier, though not in any
+way that would upset the parser. Same could be said for "!"
+
+Update: we'll use '?' and ':' (the ternary operators) as "and" and "or". See
+Python's ternary operators. And see full-blown expressions.
+
+Equality tests: use 'a=b' in place of atoms:
+{? a = x | !(b = y) }
+where x and y are likewise name-like strings or numbers. Testing is for
+"more or less equality".
+Larger / smaller? Oh come on! Now you're just making things up. 
+
+Coercion:
+- lists are true if full, false if empty.
+- ditto for maps
+- functions are evaluated
+- objects are true.
+
+Switches:
+
+Sometimes, you need to take different paths/actions based on the value of
+a parameter, not just it's truthiness:
+
+[% SWITCH view_mode %]
+  [% CASE 'full' %] ...
+  [% CASE 'condensed' %] ...
+  [% CASE 'threaded' %] ...
+  [% DEFAULT %]
+[% END %]
+
+The first thought would be to have an additional sigil for the "SWITCH" part,
+denoting the variable to be checked, and then inside, we use another sigil
+for the "CASE" part, denoting the constant needed. There would be a
+special form for the default case, or we could have any child node of the
+switch node that is *not* cased become the default case:
+
+<div style="{SWITCH view_mode}">
+  <p style="{CASE full}"> ... </p>
+  <p style="{CASE condensed}"> ... </p>
+  <p style="{CASE threaded}"> ... </p>
+  <p> ... </p>
+</div>
+
+This kind of checking can be duplicated by simply allowing a '=' test inside
+conditional statements, which can certainly test against simple, symbol-like
+strings:
+
+<div>
+  <p style="{? view_mode = full}"> ...
+  <p style="{? view_mode = condensed}"> ...
+
+...except for the "default" case. Also, the variable to test needs to be
+typed again and again.
+
+We just don't have any more sigils left. Sounds like something the '?'
+sigil will want to do anyway, but we won't let it, since that would be
+too overloading! Let's use '|' instead...
+
+<div style="{? view_mode = }">
+  <p style="{? = full}"> ...
+  <p style="{? = condensed}"> ...
+  <p style="{? = }"> ...
+
+...except I like the text equality thing. We just can't use an "else"
+here.
+
+Use '|:'? Sounds like regex grouping anyway:
+<div style="{|: view_mode}">
+  <p style="{|. full}"> ...
+  <p style="{|. condensed}"> ...
+  <p style="{|.}"> ... else 
+</div>
+
+In which:
+  |: <name> sets the "switch context"
+  |. <name> checks the "switch context"
+  |.        is the default.
+Problem: we don't know about the defaults unless we parse everything...
+or do we?
+Solution: the "switch context" is kept in the environment (where else).
+A successful match unsets the switch context, allowing none else to match.
+We're altering an artificial environment here, so no worries.
+So the ':' must always set the "switch context" to a defined value for this
+to work!
+
+Otherwise, |. behaves identically to ? with respect to quantifiers.
+'|:' behaves like a true '?', even if the condition is false. 
+This means that:
+
+|:   Keep the div (from above)
+|-:  Do not keep the div, just select
+|+:  Keep the div
+|*:  Keep the div
+
+No, we can do better: |: is like ?
+|:   Keep the div, unless the switch variable itself is empty (then no contents)
+|-:  Do not keep div in any case, just select on contents
+|+:  Keep the div even if the switch variable itself is empty
+|*:  If the variable is empty, include only {|.} part
+
+No, we can do better: 1) we usually want '' to trip the default case normally.
+2) we can also have other content
+Should we really be including other content "in any case"? Probably yes.
+-> 'like a true ?' it is.
+
+
+
+
+Comments:
+
+<div style="{# This is a comment! }">
+
+Everything from '{#' until the next '}' is wiped.
+
+{#text}  - remove attribute, if empty.
+{#+text} - keep even an empty attribute
+{#-text} - the entire node, and it's children, are wiped
+{#*text} - the entire node is wiped, but the children are kept (really needed?)
+
+This would mean that {#-} and {#*} are structure sigils, and {#} and {#+} are
+text sigils :-( Remove them? Replace with {?-false}, {?*false}?
+No, we just need more sigils, this is a semantic difference:
+commenting vs. commenting out!
+
+Additional use: prevent an attribute from disappearing:
+<img alt="{@*imgs}{#+}" />
+<img alt="{@*imgs}{#+ empty alt string}" />
+<img alt="{$+alt}{@*imgs}" />
+Update: use '{~+}' instead, if possible!
+
+Structure comments:
+
+<div style="{/ This node is a comment }">
+
+{/text} - remove the entire node (and text is why we did it)
+{/*text} - remove the node, keep the children ( Ha! C-Style comments !-D )
+
+Except '/' sounds like closing a node...
+
+This way, or the other way around?  
+
+Includes:
+
+<div style="{./path/to/file}"> - include the (DOMs from the) file inside 
+                                 the div, replacing any children
+{.-/path/to/file} - remove the div and its children.
+
+No, change this: . replaces the div, .+ does it under this, 
+.* repeats this node for all children! 
+
+Wraps:
+
+Is wrapping the inverse of including? No, because there are more markers!
+
+<div style="{:/path/to/wrap}" > - like ., but replace the marked node in the
+                                  (DOMs from the) file with the div and children
+{:-/path/to/wrap} - remove the div, pass only your children
+{:+/path/to/wrap} - keep the div, but pass only your children (include the
+                    wrap under this).
+
+{:} - the element that will be replaced by the input
+{:+} - keep the element, include as it's children.
+Replacing feels more natural for the sigil-free version, but there is also
+the question of what to do with the children of the marked node...
+Answer: the marked node's children are not included. You can use this to
+fake content instead.
+
+{.$var},{:$var},{.-$var}... - take the path from the variable instead
+
+{,dom},{;dom} - include the DOM nodes passed in the env instead.
+(still use {:} as marker) This can be a single node, or a list.
+
+Guts:
+One problem: in order to be valid (X)HTML, the included files need to be
+complete HTML files. How do we discern between the "guts" of the file,
+and the file itself? We mark either the nodes up to the guts (tedious),
+or mark the guts nodes themselves (tedious to parse).
+
+Answer: mark the non-gut nodes, how many are you going to have anyway?
+
+<html id="{/*}">
+  <head id="{/}"/>
+  <body id="{/*}">
+    <p>This is what we want!</p>
+  </body>
+</html>
+
+Or do we need a better syntax for this? Works with text, too!
+
+<html id="{/* only the p below }">
+  <head id="{/ only the p below }"/>
+  <body id="{/* only the p below }">
+    <p>This is what we want!</p>
+  </body>
+</html>
+
+Functions: 
+
+{^func} - call the funcref with this node as the parameter (and the current 
+          env), and replace this node with the node(s) it returns.
+There is no quantifier, the func needs to deal with this.
+However, any quantifier is read and passed as an argument to the function.
+
+I would love to use the '&' sigil for this, but this is not valid XML!
+'!' is used for 'if not', but '=' seems good (and many languages use this)
+except it reminds one of assignment. Might need this later.
+How about '|'? Piping opens a command... looks like an option. Go with '~'?
+Backticks? Hard to read. Octothorpe? Comments. The caret? Nice, actually.
+
+There is no syntax for passing any arguments from the template to the
+function, for two simple reasons:
+- the template can pass anything it wants *inside* the node in question
+- the entire environment is passed, too (is it?)
+
+There should be standard things for such a function:
+- the attribute with the {^} should be removed, but passed
+- parse a given node, or list of nodes, as template (not automatically! Why not?)
+- the returned node (list?) is parsed again (nope).
+
+The standard things are shortened quite a bit if we de-templatize the ^-node,
+and its children, before calling the function (passing the clone with cloned
+and resolved children, the environment and the ^-key and quantifier).
+
+In fact, don't pass the environment either - makes it safer. Any needed
+info can be passed under the function call. This also has a chilling effect
+on functions: you can't just call a function which reads the environment and
+does everything for you - that would recreate the templating system.
+Disallowing the environment makes it clear that the function is not expected
+to have any side effects, and is to work locally.
+
+Assignment:
+
+{=} looks good for assignment:
+{= var expression} would assign the entry 'var' in a (new) environment to the
+value of the expression.
+The expression could be a simple string, for scalars, or something JSON-like.
+The main use is to pass information on to shared wrappers or includes.
+No recursion, constructs cannot contain other constructs!
+
+Quants:
+{= var value}: assign the string 'value' to the var
+#{=+ var value}: assign the string 'value' to the var, and then "output" it
+{=- var value}: assign the string 'value' to the var only if it is false. 
+Append? Recognize JSON / YAML?
+"Outputting" is wrongish, we can just duplicate it. Removing this means that
+assignments are non-modifing.
+We can use =+ for appending, then.
+
+Assignment scope: we'd need to change a passed environment (horrors!), or we can
+do the following: the assignment is valid only in the scope of the current node!
+How can we do this? Parse '{=}' first, and then the next ones with an augmented
+environment? How so?
+
+- Detect assignments
+- parse and execute all assignments
+- parse the *unchanged node* again, ignoring assignments
+- remove assignments in the remove-structure-sigil phase.
+
+Order of evaluation:
+- @ , ? , . , : , ^ etc. There can be only one anyway.
+- %
+- $
+- #
+- ~ (must be last)
+
+Quantifiers:
+I'm wondering which the default should be. It seemed the default would be
+to drop the entire node in question, allowing the traditional parsing as
+templating control structures. Now I think the default should be to keep
+the node if "true" or "full", the '+' should signify to keep it in any case,
+the '-' should mean to remove it in any case. The '*' usually does something
+to (or with) the children.
+
+Environments: 
+
+Like HTML::Template, a hash.
+How do we deal with loops? As an array of hashes.
+How do we deal with inner variables? The hash is expanded with 
+"__parent__", "__first__", "__last__", "__odd__", "__even__", "__row__" as
+necessary? And if demanded?
+
+Or can we say these "must exist" to be overridden? Too much work!
+Instead, we warn that, if these are turned on, the passed environment will
+be changed! (weaken __parent__, by the way).
+
+Third alternative: we change the environment, but un-modify it on the way
+back up.
+
+Fourth alternative: we don't change the environment, but pass two environments
+internally. That seems like the cleanest. In fact, pass a stack of
+environments, this will also handle the "parent" issue. It's just a bunch of
+pointers anyway. Can we then deny global vars? Yes, by "forgetting" to push
+the top environment onto the back of the list. This could even be done
+on a per-loop basis, if we had the syntax for it.
+
+Free-form content: 
+
+This means the "inner HTML" of many pages. In traditional
+templating systems, this is handled by 
+  <div class="content">
+    <TMPL_VAR name="content">
+  </div>
+which obviously won't fly here. First solution:
+  <div class="content" style="{,content}" />
+or even 
+  <div class="content" style="{,+content}" />
+or even
+  <div class="{,+content}content" />
+which is slightly harder to read, but shorter and does not waste an attribute.
+(Incidently, the "," looks horrible and barely readable, but there's not much
+one can do. We want to keep the foursome of "include/wrap file/variable"
+together.)
+
+How do we create this "content" node? Probably via an HTML-like intermediary.
+Remember that "standard templating systems" don't provide for this, either.
+
+
+
+Examples:
+Yes, this is more than necessary, but makes for some very nice markup.
+
+<meta name="{$name}" content="{$content}" style="{@*metas}" />
+
+<ul style="{@nav}">
+  <li>{$navigation_text}</li>
+</ul>
+<strong style="{!nav}">There are no subcategories</strong>
+
+The trigger is <span style="{!-active}">not</span> active.
+-> "The trigger is not active.", the <span> is removed.
+
+<table style="{^fill_table_from_sql}">
+  SELECT * FROM products WHERE category = '{$category}'
+</table>
+
+Or better:
+<table style="{^fill_table_from_prepared_statement}">
+  SELECT * FROM products WHERE category = ? AND title = ?
+  <param id="{$category}" />
+  <param id="{$title}" />
+</table>
+
+Invalid HTML:
+As it stands, we can easily produce well-formed, but invalid, HTML from
+valid templates:
+<table style="@-contents">
+<tr><td>{$name}</td><td>{$value}</td></tr>
+</table>
+The only way around this would be to forbid the deleting of elements, and
+only allow the cloning of elements in place...
+
+It appears the best way to handle this is by parsing-and-collecting.
+The collecting is either a string (for instant output) or a list of
+new copies of the nodes in question.
+
+Functions:
+
+shallow_clone($node) -> shallow copy, childless. 
+has_sigil($node, '@'); # is loop...
+-> return the var name of the (first) such node.
+   Useful for loops, funcs, ifs, includes etc, as these can only appear
+   once per node anyway (each, that is. Think of @* and ?+...)
+remove_sigils($node, '@') -> modifies in-place to remove the sigil from
+all attr it is in.
+get_structure_sigil($node) -> (sigil, quant, var)
+remove_structure_sigils() -> modify in-place to remove all structure sigils
+and to kill all attributes which become empty due to removal.
+Combine shallow_clone and remove_structure_sigil?
+
+my ($sigil, $quant, $var) = get_structure_sigil($node)
+@replacements = $sigil_handlers{$sigil}->($node, environment);
+# with the sigil-handler for the empty string also filled!
+return @replacements;
+
+Ok, this suddenly became short...
+
+sub sigil_handler_condition {
+  my ($node, $environment, $sigil, $quant, $var) = @_;
+  # $sigil being one of '?' or '!'
+  my $active = get_environment($environment, $var); # parents!
+  if ($sigil eq '!') {$active = not $active;}
+  my $keep_node = ($active and $quant ne '-' or $quant eq '+');
+  my @children = ();
+  if ($active) {
+    # fill the children somehow
+  }
+  if ($keep_node) {
+    $node = shallow_clone($node);
+    remove_structure_sigils($node);
+    handle_hash_replacement($node, $environment);
+    handle_string_replacement($node, $environment);
+    $node->push_children(@children);
+    @children = ($node);
+  }
+  return @children;
+}
+
+
+Include example:
+
+<html>
+ <head><title>My page!<title></head>
+ <body>
+  <h1>Today's news:</h1>
+  <ul style="{.navigation/menu.html}">
+  </ul>
+  {# This is where we place fun stuff about news}
+  <div class="ad"></div>
+ <body>
+</html>
+
+navigation/menu.html:
+<html style="{/ we only need the ul below! }"><head style="{/}" /><body style="{/}">
+ <ul style="{@navigation}">
+  <li><a href="{$+url}">{$*destination:(undefined)}</a></li>
+ </ul>
+</body></html>
+
+The "guts" method of HTML::TreeBuilder is not much use:
+- the guts are not marked with comment tags
+- we want the snippet to be valid HTML, too.
+
+Wrap example: remember that the wrap-definition is the place of wrapping!
+INCOMPLETE!
+<html>
+ <head><title>My page!<title></head>
+ <body>
+  <h1>Today's news:</h1>
+  <div style="{:navigation/menu.html}">
+  </div>
+  {# This is where we place fun stuff about news}
+  <div class="ad"></div>
+ <body>
+</html>
+
+navigation/menu.html:
+<html style="{/ add ads before nav }"><head style="{/}" /><body style="{/}">
+ <div class="{:}navigation_container">
+  <ul style="{@navigation}">
+   <li><a href="{$+url}">{$*destination:(undefined)}</a></li>
+  </ul>
+ </div>
+</body></html>
+
+Templating in other languages:
+
+Should be a snap, as long as we have some DOM libraries, nestable maps and
+arrays, function pointers, and basic regular expressions. Python, LISP, even
+C should work, with varying difficulty of implementation.
+
+Of special note is JavaScript; not just ECMAScript, but inside a standard
+web browser. JavaScript is capable of modifying the DOM, and the template is
+valid HTML. So not only can you load the template into a web browser
+(<img alt="{$alt_tag}">), you can post-process it with a JavaScript
+de-templating library and another JS file which contains mock data, or even
+real data if you don't mind a flash of unstyled content.
+
+This means:
+- a templater can work on the template itself, checking the results in a web
+browser at very short intervals.
+- the programmer can prepare a mock dataset, which the templater can work with
+without needing a web server capable of de-templating
+- The results could be served by sending the template as a static file which
+links to the (static) de-templating library and the (dynamically generated)
+dataset in basically JSON notation.
+
+The only drawback would be if you had text like
+"Dear {$customer},"
+then it would appear un-templated between the loading of the DOM and the
+de-templating.
+One could work around this with fun constructs like
+<span style="display: none;" class="{/*post-template}">{$text}</span>
+<span class="{/pre-template}">Customer</span>
+But that could take ridiculous proportions. May only be necessary in a few
+places, though. This would also have the advantage that those without
+JS would still see a nice page.
+
+The disadvantage would be that you're showing everything, like
+<div style="{?premium_account}">
+  You are a secret hidden premium account holder!
+</div>
+
+
+
+Expressions:
+(No, see expressions.txt - we're using a much stronger recursive expression syntax)
+
+The basic expression is the ternary expression:
+
+A ? B : C
+
+If A, then B, else C.
+If B is missing, use A; if C is missing, use the empty string.
+A:C gives a default. A?B gives a conditional value.
+A? means an empty B, A: an empty C (quite meaningless).
+To make an entire attribute dependant on an expression, use {$}
+with an expression, quantifiers and '?':
+  class="{$- is_current?}active"
+Why not "{~- is_current}"? We've already set that up for whitespace chomping.
+
+A,B and C can be literal strings, or select expressions.
+
+A literal string starts with a back tick: `Literal . Quotes rub against XML.
+The literal string goes to the end of the expression, whatever that is.
+Literals use an escaping syntax. '#' is too comment-like, '%' clashes with
+uri-based percent encoding. Use '^', the caret: should not appear in URIs or
+prose, so considered safe.
+
+Escaping: Hex of Unicode between ^ and ; : ^20; ^201F;
+
+Examples:
+  <a href="{$ href : `/index.html }"
+
+Select expressions take the form:
+  one.two.three
+or in the most cases:
+  one
+What gets subselected is dependent on the previous select.
+
+Method and function calls:
+
+Subexpressions can be of the form:
+  one.two(A, B, C).three()
+The parentheses-expressions are extracted first, and (internally)
+replaced with numbers:
+  one.two(0).three(1)
+We can force function evaluation this way.
+Note: no nesting!
+What we *won't* do, is func.one.two to evaluate to func(one, two) or
+func(one).two. To call a function, use () or let it be last.
+
+Order: Extract term:      {$+ <term> }
+       Extract expression <term> -> A ? B : C
+       Extract function arguments: (...) -> (0)
+       Extract function parameters: /,/ -> a, b, c, d
+       Extract subselects: a -> a1.a2.a3
+       Go through a1, a2, a3 in subselection list (recursive?)
+
+
+OR: put a real expression-parsing routine between { and }.
+
+
+TINY:
+
+A tiny version would include:
+{$identifier} in Attributes and Text,
+{@identifier} in Attributes
+{?identifier} in Attributes
+Also: {@-identifier} and {?-identifier} to remove DOM nodes. 

@@ -1,0 +1,9 @@
+Coercion / resolution:
+
+1. resolve subselects to get a value
+2. pass values through filters to get another value
+3. coerce value according to the final type.
+
+Sigil $:
+canonical: scalar
+

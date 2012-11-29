@@ -1,0 +1,92 @@
+Snowdrop expressions:
+
+An expression with an environment resolves to a value.
+(This is different from coercion, where the value is adapted to it's use).
+
+Examples:
+
+abc: 
+- environment lookup "abc".
+
+abc.def:
+- environment lookup "abc", then
+  - if map: select key "def"
+  - if object: select attribute "def"
+  -            or call method "def"
+
+abc.0.4:
+- environment lookup "abc"
+- array element 0
+- array element 4
+
+"abc":
+- literal string abc
+
+1
+- literal number 1
+
+abc(def):
+- call function abc(which?) on environment lookup "def".
+  It makes the most sense to use the same rules as for other subexpressions:
+  abc is then also an environment lookup.
+
+abc.def(4, aeu, "this").0.xyz
+- environment lookup "abc"
+- call method "def" with
+  - literal number 4
+  - environment lookup "aeu"
+  - literal string "this"
+- array element 0
+- key, attribute or method "xyz"
+
+SO WE HAVE:
+
+- literal strings
+- literal values
+- environment lookups (this should be default!)
+- map key selection
+- array element selection
+- object attribute selection
+- object method call (with or without parameters)
+- unbound function call
+
+We cannot let a.b evaluate to the bound method, then let coercion handle it: what about a.b.c? .
+
+Quotation signs:
+'abc', "abc" and `abc` all evaluate to the literal string 'abc'. The quotes must be the same.
+Backticks are included because ' and " are reserved XML characters.
+
+OVERRIDES:
+'abc' (or any other quotation mark) to force literal interpretation.
+To force environment lookup, technically ENV(abc) or ENV('abc') should work.
+No, not simple enough: keep looking
+$abc? $$$$abc? (abc)? Technically works
+
+abc.(def).ghi: env of abc, then env of def, then literal key ghi.
+
+So ((abc)) is env of env of abc?
+(('abc')) is env of literal abc, the same as (abc).
+.('abc'). is the same as .abc.
+(abc).def = env of env of abc, literal key def
+
+If JavaScript and Lua can sell this, so can I.
+This will be *highly confusing*, I'm afraid - but I like it. It's advanced usage anyway...
+Precedence? 'a ? !(b : c)' evaluates env of 'b' : 'c' :-/
+
+Ok, no, wait. $abc (Perlish) or *abc (C-style) should work. I'm not sure that ((abc)) would
+be $$abc in a naïve implementation anyway. Let's go with $.
+
+OPERATORS:
+No assignment!
+And and or: use ? and : as LTR shortcutting versions (see Python: a and b or c)
+No Arithmetic, yet. Use Functions. (Hehe, how about 'operator+' Functions?)
+Well, comparison operators would be nice: '='.
+Negation: !(Expression)
+
+Grammar:
+EXPR = ALTERNATIVE ( [?:] ALTERNATIVE) *
+ALTERNATIVE = OPERAND | '!' ALTERNATIVE
+OPERAND = TERM ( '.' TERM )*
+TERM = SYMBOL | STRING | NUMBER | '(' EXPR ')' | SYMBOL '(' EXPR (, EXPR)* ')' 
+
+What about fun(abc)('param') ? I.e. Method chaining? Use 'TERM' instead of 'SYMBOL' in last form? (And use magic to end the left recursion)
