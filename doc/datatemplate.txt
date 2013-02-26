@@ -1,0 +1,98 @@
+DataTemplate:
+
+given a stash of data (as usual), and a data structure as template,
+generate a new data structure, with the "structure of the template",
+and the "data of the stash".
+
+- structures without template directives evaluate to themselves.
+
+Each internal structure starts with "I want a..."
+*OR* "I want some..." in the case of "evaporating" wrappers
+
+Examples:
+[ 'hello', { one => 1, two => 2} ] stays the same
+
+
+LISTS:
+
+[ ... [ '@things' ] ... ] -> [ ... [ 1, 2, 3 ] ... ]
+
+[ ... [ '@things', 'this', '$that' ] ... ] -> [ ... ['this', 1, 'this', 2, 'this', 3 ] ... ]
+
+[ ... [ '@-things', 'this' '$that' ] ... ] ->
+[ ... 'this', 1, 'this', 2, 'this', 3 ... ]
+
++? for empty lists?
+
+$_ : the entire thing we're looping over (e.g. also list-of-scalars)
+
+'@'  : repeat contents in this list, remove entire list if empty
+'@-' : repeat contents *outside of list*
+'@+' : repeat contents in this list, keep an empty list
+'@*' : repeat contents in their own list
+
+[ ... [ '@empty' ] ... ] -> [ ... ... ]
+
+[ ... [ '@+empty' ] ... ] -> [ ... [] ... ]
+
+[ ... [ '@*things', 'this', '$that' ] ... ] -> 
+[ ... [ 'this', 1 ] , [ 'this' , 2 ] , [ 'this' , 3 ], ... ]
+
+Also:
+[ ... [ '@-things', ['this, '$that'] ] ... ] ->
+[ ... [ 'this', 1 ] , [ 'this' , 2 ] , [ 'this' , 3 ], ... ]
+
+[ ... [ '@things', ['this, '$that'] ] ... ] ->
+[ ... [ [ 'this', 1 ] , [ 'this' , 2 ] , [ 'this' , 3 ] ], ... ]
+
+HASHES:
+
+{ one => 1, two => 2 }
+{ '%things' => ? } -> { one => 1, two => 2 }
+
+Key? Value?
+{ '%things' => ?, '$x' => '$y', '$z' => 0 } ->
+{ 'one' => 1, 'one_z' => 0, 'two' => 2, 'two_z' => 0 }
+
+{ '%empty' => ? } -> 
+{ '%+empty' => ? } -> {}
+{ '%-things' => ? } -> (one, 1, two, 2)
+
+How do we interpolate a list into an existing hash?
+
+{ 'default' => 1, %things } ?
+{ 'default' => 1, '%-things' => ? }
+{ 'default' => 1, 'things' => { '%things' } } is easy... supposedly
+
+What does a hash consist of ? keys and values
+We need the 'value' of the '%' construct to provide input on what to do.
+Possible outcomes:
+- we want to interpolate a passed hashref into a given hash
+- we want to expand a passed hashref into a new hashref
+  - with instructions what to do!
+
+{ 'default' => 1, '%things' => 1 } non-hash: just do it
+{ 'default' => 1, '%things' => { '$key' => '$value' } } new hash... named what?
+{ 'default' => 1, '%-things' => { '$key' => '$value' } } interpolate, default behavior
+
+The "'%things' => ?" syntax does not allow for the key under which the new hash ref is stored -> must always interpolate!
+'=> <constant>' means 'the hash in-place', '=> {}' means 'interpolate the resulting hash for each $key + $value'
+
+{ 'default' => 1, '@numbers' => { '$_' => 1 } }
+-> expand to hash with given keys and constant value
+{ 'default' => 1, '@numbers' => { '$_' => '$sortname(_)'} }
+
+So to fill a hash, the construct must always point at a hash ref, which is interpolated. We need a key => value!
+
+{ 'default' => 1, '@numbers' => { '$_' => 1, '{$_}b' => 2 } }
+
+LoH:
+{ 'default' => 1, '@things' => { '$name' => '$number', '$value' => 0 } }
+
+IF-THEN-ELSE
+
+[ '?if', '$then', 'else' ] -> 'then'  or  'else'
+[ '?+if', '$then', 'else' ] -> ['then'] or ['else']
+[ '?-if', ['then', 'morethen'], ['else', 'moreelse'] ] -> 'then', 'morethen' or 'else', 'moreelse'
+
+
