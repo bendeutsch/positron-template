@@ -95,4 +95,74 @@ IF-THEN-ELSE
 [ '?+if', '$then', 'else' ] -> ['then'] or ['else']
 [ '?-if', ['then', 'morethen'], ['else', 'moreelse'] ] -> 'then', 'morethen' or 'else', 'moreelse'
 
+SWITCHES
+{ '?given' => { 'when1' => 'one', 'when2' => 'two', '' => 'default'} } 
+-> 'one'.
+{ '?+given' ... -> keep {}
+{ '?given' => { 'when1' => ['things', 'here'] ... -> ['things', 'here']
+{ '?-given' => """""""""""""""""""""""""""""""""  -> 'things', 'here'
 
+COMMENTS
+
+['one', '# not!', 'two' ] -> ['one', 'two']
+'the {#not so fine} text' -> 'the  text'
+
+Use quantifiers for whitespace chomping
+
+['one', 'two', '/comment', 'three', 'four'] -> ['one', 'two']
+['/-comment'...] -> ()
+
+INCLUDES
+
+[ './path/to/template', 'one', 'two' ] -> [ <internal template> ]?
+What about 'one' and 'two'?
+[ '.-/path/' ] -> <internal template>
+[ '.+/path/' ] -> [ <internal template> ] ?
+
+{ './path/to/template' => 1 } -> { <internal hash template> } ?
+{ './path/to/template' => [ children ] } -> { <internal hash template> } ?
+{ './path/to/template' => { children => childvalue } } -> { <internal hash template> } ?
+
+Hm, '.' sounds like a path component! Use another sigil?
+Or even use ':' and ';' exclusively?
+
+How is ',' and ';' different from
+[ '@var' ] or { '%var' => 1 }
+-> use ':' only.
+
+Each ':/thingy/' will cause "the children" to be captured,
+to be inserted when we find a ':'.
+This makes it clear what happens to 'one' and 'two' above: those are
+"the children", a new array ref or hash ref. This will replace
+[':'] or {':'}, as needed.
+[':-'] or {':-'} will interpolate
+
+[':abc', 'one'] + [':'] -> ['one']
+[':abc', 'one'] + [':-'] -> ('one')
+[':abc', 'one'] + [':+'] -> [['one']] ?
+
+[':abc', ['one']] + [':'] -> [['one']]
+[':abc', ['one']] + [':-'] -> (['one'])
+[':abc', ['one']] + [':+'] -> [[['one']]] ?
+
+We need far less quantifiers here...
+Two cases: [':'] becomes 'one' and [':'] becomes ['one'].
+
+[':abc', {one => 1}] + [':'] -> [{ one => 1 }] or { one => 1 }
+[':abc', {one => 1}] + {':'} -> { one => 1 } or ( one => 1 ) ?
+
+
+WRAPS
+
+See above
+
+FUNCTIONS
+
+We can use '&' here!
+['&abc'] -> [ ... what comes from abc ... ]
+['&-abc'] -> (... what comes from abc ... )
+['&+abc'] -> ?
+
+ASSIGNMENTS
+
+['=']
