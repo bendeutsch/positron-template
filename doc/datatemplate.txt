@@ -8,6 +8,71 @@ and the "data of the stash".
 
 Each internal structure starts with "I want a..."
 *OR* "I want some..." in the case of "evaporating" wrappers
+(Also called "interpolating" constructs).
+
+Since "interpolating" is so common, we'll change the syntax to better
+support it:
+
+LISTS:
+
+[ '@list',  '$var', 'zig' ] -> [ 'one', 'zig', 'two', 'zig' ]
+[ '<@list', '$var', 'zig' ] -> ( 'one', 'zig', 'two', 'zig' )
+[ '@list',  ['$var', 'zig' ] ] -> [ ['one', 'zig'], ['two', 'zig'] ]
+[ '<@list',  ['$var', 'zig' ] ] -> ( ['one', 'zig'], ['two', 'zig'] )
+
+HASHES:
+
+A hash needs a 'key => value' construct to "loop over". So a hash as
+a target defines what each 'key => 'value' means.
+
+Pointing to a non-hash means... something? It's evaluated "in hash context"
+in any case. '$_' is ideal. '1' is technically a violation.
+'[ 1, 2, 3 ]' will also not work. An interpolating construct will work.
+
+For each key/value in the source hash, '_' is set to { key => value },
+'key' is set to key and 'value' is set to value.
+
+{ '%hash' => '$_' } -> { one => 1, two => 2 }
+{ '<%hash' => '$_' } -> ( one => 1, two => 2 )
+{ '%hash' => { '$key' => ['$value'] } } -> { one => [1], two => [2] }
+{ '<%hash' => { '$key' => ['$value'] } } -> ( one => [1], two => [2] )
+
+{ '%hash' => [ '<?cond', { key => 1 }, { key => 0 } ] } -> { key => 1, key => 0, key => 0 ...}
+Should this auto-interpolate?
+{ '%hash' => { '|given' => { cond1 => 1, cond2 => 2} } }
+>>Error: '1' does not match the hash context in 'given'. (never gets to %hash)
+{ '%hash' => { '<|given' => { cond1 => 1, cond2 => 2} } }
+>>Error: '1' does not match the hash context in 'given'. (still never gets to %hash)
+{ '%hash' => { '|given' => { cond1 => { one => 1 }, cond2 => { two => 2 } } } }
+-> { one => 1, two => 2, one => 1 }...
+?? What about:
+{ '%hash' => { '<|given' => { cond1 => { one => 1 }, cond2 => { two => 2 } } } }
+
+[ '|given', { cond1 => 1, cond2 => 2 } ] -> [ 1 ]
+[ '<|given', { cond1 => 1, cond2 => 2 } ] -> ( 1 )
+[ '|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> [ [1, 2] ]
+[ '<|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> [1, 2]
+[ '<<|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> (1, 2)
+
+The 'given' syntax is far from perfect... like conditions, maybe auto-interpolate?
+No, consistency is key!
+We need to clarify the 'cond' parts. '=1', '=match', '=' (empty), '_' (default)
+
+hash = { one => 1, two => 2, three => 3 }
+{ '%hash' => { '<|key' => { '=one' => { foo => '$value' }, '_' => '$_' } } }
+{ one => 1 } --> { foo => '$value' } --> { foo => 1 }
+{ two => 2 } --> $_ --> { two => 2}
+{ three => 3 } --> $_ --> { three => 3 }
+-> { foo => 1, two => 2, three => 3 }
+
+IF-THEN-ELSE
+
+[ '?true', 'one', 'two' ] -> ['one']
+[ '<?true', 'one', 'two' ] -> ('one')
+[ '<?true', ['one', 'two'], [ 1, 2 ] ] -> ['one', 'two']
+[ '<<?true', ['one', 'two'], [ 1, 2 ] ] -> ('one', 'two')
+
+--- OBSOLETE: ---
 
 Examples:
 [ 'hello', { one => 1, two => 2} ] stays the same
