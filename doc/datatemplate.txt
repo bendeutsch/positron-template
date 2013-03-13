@@ -4,7 +4,202 @@ given a stash of data (as usual), and a data structure as template,
 generate a new data structure, with the "structure of the template",
 and the "data of the stash".
 
-- structures without template directives evaluate to themselves.
+Structures without template directives evaluate to themselves.
+
+Interpolation: with special sigil '<'.
+[ … '<', [a, b, c], … ] -> [ … a, b, c, … ]
+{ … '< 1' => {a => x, b => y}, … } -> { … a => x, b => y … }
+(Hashes can take a number after that, to determine order)
+
+Now that interpolation is "out of the way", we can solve the other
+constructs.
+
+The idea of "a [] construct always returns a [], a {} construct always
+returns a {}" is impractical and is hereby abandoned.
+
+TEXT:
+
+'$thing' -> 'what thing says'
+'{$thing}' -> 'what thing says'
+'the {$thing} code' -> 'the what thing says code'
+
+This basically can come from Positron::Template.
+The '{}' are optional if the entire construct is meant. Otherwise, not so much.
+Use the given quantifiers for whitespace chomping (and maybe construct chomping
+when using the {}-less version).
+
+DIRECT INCLUSION:
+
+'$_' is not for *direct* inclusion, it is for *textual* inclusion.
+Use '&' for direct inclusion. For conformance with Positron::Template,
+',' is supported as an alias.
+
+'&thing' -> whatever env{thing} is
+'&_' -> whatever "it" is, see loops etc. Or '&' ?
+'&:' -> whatever has been wrapped (see there)
+
+The '&' construct is replaced entirely by its evaluation, in contrast to
+'$', which is a text-only replacement.
+
+LISTS:
+[ @list, 1, 2 ] -> [1, 2, 1, 2]
+[ @list, [1, 2] ] -> [[1, 2], [1, 2]]
+[ 3, [ @list, 1, 2 ], 4] -> [3, [1, 2, 1, 2], 4]
+[ 3, '<', [ @list, 1, 2 ], 4] -> [3, 1, 2, 1, 2, 4]
+[ 3, '<', [ @list, [1, 2] ], 4] -> [3, [1, 2], [1, 2], 4]
+
+Otherwise: evaluate all children with the environment of each list
+element, and concatenate.
+'&_' is the list element itself
+[ @list, '&_'] = '&list'
+
+Interpolate straight lists from environment:
+[ 1, '<', '&list', 2]
+
+What about [1, 2, @list, 3] ? Error? [1, 2, 3, 3]?
+
+HASHES:
+
+{ %hash => { $key => $value, $key2, $value2 } }
+For each key/value pair in the hash, evaluate the resulting hash in
+the environment of the { key => $key, value => $value } context, and
+interpolate.
+
+Any preexisting keys are (silently) clobbered.
+
+IF-THEN-ELSE:
+
+Non-wrapping:
+[ '?if', 'then', 'else' ] -> 'then'
+[ '?if', [1, 2], [3, 4] ] -> [1, 2]
+[ 'bla', [ '?if', [1, 2], [3, 4] ], 'bar'] -> ['bla', [1, 2], 'bar' ]
+[ 'bla', '<', [ '?if', [1, 2], [3, 4] ], 'bar'] -> ['bla', 1, 2, 'bar' ]
+
+[ '?false', 1 ] -> () [ '?true', 1 ] -> 1 ?
+[ 'bla', [ '?false', 1 ], 'bar' ] -> ['bla', 'bar'] ?
+"If there is no else-clause, it's suddenly interpolating in the false case,
+but stays the same otherwise"?
+{ key => [ '?false', 1 ] }
+
+Alternatives:
+[ 'bla', '<', [?false, [1], []] ]
+{ '< 1' => [?false, {key => 1}, {} ] }
+
+So: doable, but a bit iffy, and not necessary. Maybe syntactic sugar.
+
+SWITCHES:
+
+Like lists, but as hashes!
+{ '?given' => { when1 => a, when2 => b, when3 => c, '?' => default } }
+-> a or b or c or default
+If nothing matches? Like the 'empty else' above, I guess.
+
+COMMENTS:
+
+Two kinds: structural, and textual. Use '/' and '#', as usual.
+[ 1, '# a comment', 2] -> [1, 2]
+{ 1 => '# a comment' } -> { 1 => '' }
+[ 1, '#+ a comment', 2] -> [1, '', 2]
+{ '# a comment' -> 1 } -> { '' => 1 }
+{ 'one{# could be anything}' => 1 } -> {'one' => 1}
+{ 'one {# could be anything}' => 1 } -> {'one ' => 1}
+{ 'one {#- could be anything}' => 1 } -> {'one' => 1}
+
+[ 1, '/not the next', 2, 3] -> [1, 3]
+[ 1, '//not the nexts', 2, 3] -> [1]
+[ 1, '/not the next', [2, 3], 4] -> [1, 4]
+{ one => '/not this' } -> { one => '' } or just error ("can't remove value")
+{ '/not this' => [], this => {} } -> { this => {} }
+
+Optional: use '/*' and '*/' as 'remove from / til here'?
+A bit strange for the '*' construct, so no. Arrayref it.
+
+INCLUDES:
+
+The "include from environment" (',' in P::T) is still here, with '&' the preferred alias.
+Includes read from file, as a json structure or Storable save.
+Getting the search paths correct could be a pain.
+Note that this must be a single [] or {}!
+
+[ 1, '. file', 3] -> [ 1, ['contents of file'], 3]
+[ 1, '<', '.file', 3] -> [1, 'contents of file', 3]
+
+{ one => 1, two => '.file' } -> { one => 1, two => { contents => file } }
+{ one => 1, '< 1' => '.file' } -> { one => 1, contents => file }
+
+One question: is '.' the correct sigil for this?
+What about '>'? ':'? See wraps
+Update: wraps capture, includes do not.
+So use '.' with an expression (i.e. with whitespace, probably quotes) for
+this. Matches what bash et al. do.
+
+WRAPS:
+
+Call file, but capture "stuff" in the environment. Include this later.
+[1, ':file', 2, 3 ] -> [1, [ file contents with &: -> 2 ], 3 ]
+[1, ':file', [2, 3], 4 ] -> [1, [ file contents with &: -> [2, 3] ], 4 ]
+[1, '<', ':file', [2, 3], 4 ] -> [1, file contents with &:-> [2, 3], 4 ]
+Ooh: we just double-chained stuff!
+[1, ':file' ] -> [1, [ file contents with &: unset ] ]
+
+{ one => 1, two => ':file'   } -> { one => 1, two => [ contents of file with : unset ] }
+{ one => 1, ':file' => value } -> { one => 1, contents => : -> value }
+Effectively auto-interpolating!
+{ one => 1, two => { ':file' => value } } -> { one => 1, two => { contents of file with : -> value } }
+{ one => 1, two => { ':file' => value } } -> { one => 1, two => [ contents of file with : -> value ] }
+{ one => 1, '<' => { ':file' => value } } -> { one => 1, contents of file with : -> value }
+
+FUNCTIONS:
+
+Functions without gobbling structure are done with '&'. Use '^' for functions
+which do gobble structure, as in P::T.
+Let 'expr()' evaluate to 0, expr(2) evaluate to 5, and 'expr([])' evaluate to [3]
+[ '^expr' ] -> [ 0 ]
+[ 1, '^expr', 2 ] -> [ 1, 5 ]
+Gobble the *next* remaining thing, and work with that.
+[ 1, '^expr', [], 2 ] -> [ 1, [3], 2]
+
+Hash: must evaluate to hash ref, basically auto-interpolates
+{ one => 1, '^expr' => [stuff], three => 3} -> {one => 1, key(expr([stuff])) => value(expr([stuff])), three => 3}
+{ one => 1, two => '^expr', three => 3} -> {one => 1, two => expr(), three => 3}
+{ one => 1, two => { ^expr => 1 }, three => 3} -> { one => 1, two => { key(expr(1)) => value(expr(1)) }, three => 3}
+Ok, so no easy replacing values *with arguments*. '<' will not help here:
+{ one => 1, '<' => { two => ^expr }... still no arguments
+The plan is:
+{ one => X }, so that X is a combination of ^expr and structure from the template.
+X is supposed to be a scalar, or hash (arrays is easy).
+Scalars seem out; can we do a hash, though?
+{ one => { ^expr => [structure] }} <- as long as expr generates the correct hash, no problem.
+
+So just for scalars:
+Arguments must be passed in the expression:
+{ one => '^expr(thing, _, `etc`)' }
+And grant environment access to that.
+Ok, wait, what about { one => '&expr(thing, _, `etc`)' }?
+That does the same.
+
+ASSIGNMENT:
+
+Basically '= identifier expression' evaluates 'expression' and places the result
+in 'identifier'. So a single thing.
+
+Use '='. P::T says: the assigment via '=' is valid *under* the node with
+the assignment. We don't have that here.
+We have:
+[ '=', ...]
+{ '=' => ... } 
+In the first case, remove the assignment element, and use this for the elements
+*to the right*.
+In the second case, use the assignment for all elements in the value of the
+assignment. Then auto-interpolate? Evaluate the assignment first, and use for
+all other elements in the hash?
+
+LITERALS:
+
+In most cases, simply remove one '~' from the beginning of scalars.
+For text, replace '{~}' with nothing last.
+
+--- ALSO OBSOLETE: ---
 
 Each internal structure starts with "I want a..."
 *OR* "I want some..." in the case of "evaporating" wrappers
@@ -48,15 +243,55 @@ Should this auto-interpolate?
 ?? What about:
 { '%hash' => { '<|given' => { cond1 => { one => 1 }, cond2 => { two => 2 } } } }
 
-[ '|given', { cond1 => 1, cond2 => 2 } ] -> [ 1 ]
-[ '<|given', { cond1 => 1, cond2 => 2 } ] -> ( 1 )
-[ '|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> [ [1, 2] ]
-[ '<|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> [1, 2]
-[ '<<|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> (1, 2)
+IF-THEN-ELSE
 
-The 'given' syntax is far from perfect... like conditions, maybe auto-interpolate?
-No, consistency is key!
+[ '?true', 'one', 'two' ] -> ['one']
+[ '<?true', 'one', 'two' ] -> ('one')
+[ '<?true', ['one', 'two'], [ 1, 2 ] ] -> ['one', 'two']
+[ '<<?true', ['one', 'two'], [ 1, 2 ] ] -> ('one', 'two')
+
+SWITCHES:
+
+Switches need to auto-interpolate - what else would hash switches do?
+
+Hash switches:
+{ '|given' => { '=cond1' => { one => 1 }, '=cond2' => { two => 2 } } }
+auto-interpolates (it has to!)
+-> { one => 1 }
+{ '<|given' => { '=cond1' => { one => 1 }, '=cond2' => { two => 2 } } }
+-> ( one => 1 )
+
+[ '|given', { cond1 => 1, cond2 => 2 } ] -> ( 1 )
+[ '<|given', { cond1 => 1, cond2 => 2 } ] -> ( 1 ) # makes little sense!
+[ '|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> [1, 2]
+[ '<|given', { cond1 => [1, 2], cond2 => [3, 4] } ] -> (1, 2) # ONLY in array context!
+
+Wait, if I auto-interpolate, what's the difference between arrays and hashes?
+
+{ '|given' => { cond1 => { one => 1 }, cond2 => { two => 2 } } }
+-> { one => 1 }
+=> a hash switch, like all hash constructs, interpolates it's hash results into
+"it".
+{ 'start' => 0, '|given' => { cond1 => { one => 1 }, cond2 => { two => 2 }}, end => 3 }
+-> { start => 0, one => 1, end => 3 }
+Interpolation does not even enter here. Hashes NEED to evaluate to a hash, which is then
+interpolated (must be)
+Any alternative would need a key, right?
+{ key => [ '<|given', {cond1 => 1, cond2 => 2} ] }
+->{key => 1}
+{ key => [ '|given', {cond1 => 1, cond2 => 2} ] }
+\>{ key => [1] }
+{ key => [ '<<|given', {cond1 => [1, 2], cond2 => [2, 4] } ] }
+* ERROR *: can't have { key => (1, 2) }!
+{ key => { '|given', { cond1 => 1, cond2 => [1, 2] } } }
+-> {key => 1} or {key => [1, 2]}
+{ key => { '<|given', { cond1 => 1, cond2 => [1, 2] } } }
+-> {key => 1} or { key => [1, 2] }
+
+Difference between 'hash interpolation context' and 'value context'?
+
 We need to clarify the 'cond' parts. '=1', '=match', '=' (empty), '_' (default)
+Better: "='match'" ? Or "start in literal mode"?
 
 hash = { one => 1, two => 2, three => 3 }
 { '%hash' => { '<|key' => { '=one' => { foo => '$value' }, '_' => '$_' } } }
@@ -65,12 +300,16 @@ hash = { one => 1, two => 2, three => 3 }
 { three => 3 } --> $_ --> { three => 3 }
 -> { foo => 1, two => 2, three => 3 }
 
-IF-THEN-ELSE
+COMMENTS
 
-[ '?true', 'one', 'two' ] -> ['one']
-[ '<?true', 'one', 'two' ] -> ('one')
-[ '<?true', ['one', 'two'], [ 1, 2 ] ] -> ['one', 'two']
-[ '<<?true', ['one', 'two'], [ 1, 2 ] ] -> ('one', 'two')
+['one', '# not!', 'two' ] -> ['one', 'two']
+'the {#not so fine} text' -> 'the  text'
+
+Use quantifiers for whitespace chomping
+
+['one', 'two', '/comment', 'three', 'four'] -> ['one', 'two']
+['</comment'...] -> ()
+
 
 --- OBSOLETE: ---
 
@@ -100,7 +339,7 @@ $_ : the entire thing we're looping over (e.g. also list-of-scalars)
 
 [ ... [ '@+empty' ] ... ] -> [ ... [] ... ]
 
-[ ... [ '@*things', 'this', '$that' ] ... ] -> 
+[ ... [ '@*things', 'this', '$that' ] ... ] ->
 [ ... [ 'this', 1 ] , [ 'this' , 2 ] , [ 'this' , 3 ], ... ]
 
 Also:
@@ -119,7 +358,7 @@ Key? Value?
 { '%things' => ?, '$x' => '$y', '$z' => 0 } ->
 { 'one' => 1, 'one_z' => 0, 'two' => 2, 'two_z' => 0 }
 
-{ '%empty' => ? } -> 
+{ '%empty' => ? } ->
 { '%+empty' => ? } -> {}
 { '%-things' => ? } -> (one, 1, two, 2)
 
@@ -161,7 +400,7 @@ IF-THEN-ELSE
 [ '?-if', ['then', 'morethen'], ['else', 'moreelse'] ] -> 'then', 'morethen' or 'else', 'moreelse'
 
 SWITCHES
-{ '?given' => { 'when1' => 'one', 'when2' => 'two', '' => 'default'} } 
+{ '?given' => { 'when1' => 'one', 'when2' => 'two', '' => 'default'} }
 -> 'one'.
 { '?+given' ... -> keep {}
 { '?given' => { 'when1' => ['things', 'here'] ... -> ['things', 'here']
