@@ -33,13 +33,7 @@ sub _process {
     } elsif (ref($template) eq 'ARRAY') {
         return $self->_process_array($template, $env);
     } elsif (ref($template) eq 'HASH') {
-        my %result = ();
-        while (my ($key, $value) = each %$template) {
-            $key = $self->_process($key, $env);
-            $value = $self->_process($value, $env);
-            $result{$key} = $value;
-        }
-        return \%result;
+        return $self->_process_hash($template, $env);
     }
     return $template; # TODO: deep copy?
 }
@@ -79,6 +73,38 @@ sub _process_array {
             map $self->_process($_, $env), @$template
         ];
     }
+}
+sub _process_hash {
+    my ($self, $template, $env) = @_;
+    return {} unless %$template;
+    my %result = ();
+    my $hash_construct = undef;
+    foreach my $key (keys %$template) {
+        if ($key =~ m{ \A \% (.*) \z }xms) {
+            $hash_construct = [$key, $1]; last;
+        }
+    }
+    if ($hash_construct) {
+        my $e_content = $env->get($hash_construct->[1]);
+        die "Error: result of expression '".$hash_construct->[1]."' must be hash" unless ref($e_content) eq 'HASH';
+        while (my ($key, $value) = each %$e_content) {
+            my $new_env = Positron::Environment->new( { key => $key, value => $value }, { parent => $env } );
+            my $t_content = $self->_process( $template->{$hash_construct->[0]}, $new_env);
+            die "Error: content of % construct must be hash" unless ref($t_content) eq 'HASH';
+            # copy into result
+            foreach my $k (keys %$t_content) {
+                $result{$k} = $t_content->{$k};
+            }
+        }
+    } else {
+        # simple copy
+        while (my ($key, $value) = each %$template) {
+            $key = $self->_process($key, $env);
+            $value = $self->_process($value, $env);
+            $result{$key} = $value;
+        }
+    }
+    return \%result;
 }
 
 1;
