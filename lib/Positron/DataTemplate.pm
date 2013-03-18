@@ -17,6 +17,8 @@ sub new {
 
 sub process {
     my ($self, $template, $env) = @_;
+    # Returns (undef) in list context - is this correct?
+    return undef unless defined $template;
     $env = Positron::Environment->new($env);
     my @return = $self->_process($template, $env);
     # If called in scalar context, the caller "knows" that there will
@@ -44,8 +46,10 @@ sub _process {
 
 sub _process_text {
     my ($self, $template, $env) = @_;
-    if ($template =~ m{ \A \$ (.*) \z}xms) {
+    if ($template =~ m{ \A [&,] (.*) \z}xms) {
         return $env->get($1);
+    } elsif ($template =~ m{ \A \$ (.*) \z}xms) {
+        return "" . $env->get($1);
     } else {
         $template =~ s{
             \{ \$ ([^\}]*) \}
