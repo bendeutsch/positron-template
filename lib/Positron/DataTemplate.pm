@@ -96,9 +96,12 @@ sub _process_hash {
     return {} unless %$template;
     my %result = ();
     my $hash_construct = undef;
+    my $switch_construct = undef;
     foreach my $key (keys %$template) {
         if ($key =~ m{ \A \% (.*) \z }xms) {
             $hash_construct = [$key, $1]; last;
+        } elsif ($key =~ m{ \A \? (.*) \z }xms) {
+            $switch_construct = [$key, $1]; last;
         }
     }
     if ($hash_construct) {
@@ -112,6 +115,15 @@ sub _process_hash {
             foreach my $k (keys %$t_content) {
                 $result{$k} = $t_content->{$k};
             }
+        }
+    } elsif ($switch_construct) {
+        my $e_content = $env->get($switch_construct->[1]); # The switch key
+        if (defined $e_content and exists $template->{$switch_construct->[0]}->{$e_content}) {
+            return $template->{$switch_construct->[0]}->{$e_content};
+        } elsif (exists $template->{$switch_construct->[0]}->{'?'}) {
+            return $template->{$switch_construct->[0]}->{'?'};
+        } else {
+            return ();
         }
     } else {
         # simple copy
