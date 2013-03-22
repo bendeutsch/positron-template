@@ -61,13 +61,30 @@ sub _process_array {
     my @elements = @$template;
     if ($elements[0] =~ m{ \A \@ (.*) \z}xms) {
         shift @elements;
+        my $clause = $1;
         my $result = [];
-        my $list = $env->get($1); # must be arrayref!
+        my $list = $env->get($clause); # must be arrayref!
         foreach my $el (@$list) {
             my $new_env = Positron::Environment->new( $el, { parent => $env } );
             push @$result, map $self->_process($_, $new_env), @elements;
         }
         return $result;
+    } elsif ($elements[0] =~ m{ \A \? (.*) \z}xms) {
+        shift @elements;
+        my $has_else = (@elements > 1) ? 1 : 0;
+        my $clause = $1;
+        my $cond = $env->get($clause); # can be anything!
+        # for Positron, empty lists and hashes are false!
+        if (ref($cond) eq 'ARRAY' and not @$cond) { $cond = 0; }
+        if (ref($cond) eq 'HASH'  and not %$cond) { $cond = 0; }
+        if (not $cond and not $has_else) {
+            # no else clause, return empty list on false
+            return ();
+        }
+        my $then = shift @elements;
+        my $else = shift @elements;
+        my $result = $cond ? $then : $else;
+        return $self->_process($result, $env);
     } else {
         return [
             map $self->_process($_, $env), @$template
