@@ -60,8 +60,9 @@ sub _process_array {
     return [] unless @$template;
     my @elements = @$template;
     if ($elements[0] =~ m{ \A \@ (.*) \z}xms) {
-        shift @elements;
+        # list iteration
         my $clause = $1;
+        shift @elements;
         my $result = [];
         my $list = $env->get($clause); # must be arrayref!
         foreach my $el (@$list) {
@@ -70,9 +71,10 @@ sub _process_array {
         }
         return $result;
     } elsif ($elements[0] =~ m{ \A \? (.*) \z}xms) {
+        # conditional
+        my $clause = $1;
         shift @elements;
         my $has_else = (@elements > 1) ? 1 : 0;
-        my $clause = $1;
         my $cond = $env->get($clause); # can be anything!
         # for Positron, empty lists and hashes are false!
         if (ref($cond) eq 'ARRAY' and not @$cond) { $cond = 0; }
@@ -119,9 +121,9 @@ sub _process_hash {
     } elsif ($switch_construct) {
         my $e_content = $env->get($switch_construct->[1]); # The switch key
         if (defined $e_content and exists $template->{$switch_construct->[0]}->{$e_content}) {
-            return $template->{$switch_construct->[0]}->{$e_content};
+            return $self->_process($template->{$switch_construct->[0]}->{$e_content}, $env);
         } elsif (exists $template->{$switch_construct->[0]}->{'?'}) {
-            return $template->{$switch_construct->[0]}->{'?'};
+            return $self->_process($template->{$switch_construct->[0]}->{'?'}, $env);
         } else {
             return ();
         }

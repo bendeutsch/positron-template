@@ -37,4 +37,6 @@ is_deeply($template->process( ['?empty_list', 1, 2], $data ), 2, "Empty list cou
 is_deeply($template->process( ['?hash', 1, 2], $data ), 1, "Full hash counts as true");
 is_deeply($template->process( ['?empty_hash', 1, 2], $data ), 2, "Empty hash counts as true");
 
+is_deeply($template->process( [ '?if', '&list', 'else' ], $data ), [1], "Evaluate value");
+is_deeply($template->process( [ '?if', ['?false', 3, 4 ], 'else' ], $data ), '4', "Double if");
 done_testing();
