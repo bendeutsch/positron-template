@@ -44,12 +44,19 @@ sub _process_text {
         return $env->get($1);
     } elsif ($template =~ m{ \A \$ (.*) \z}xms) {
         return "" . $env->get($1);
+    } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
+        return (wantarray and not $1) ? () : '';
     } else {
         $template =~ s{
             \{ \$ ([^\}]*) \}
         }{
             my $replacement = $env->get($1) // '';
             "$replacement";
+        }xmseg;
+        $template =~ s{
+           (\s*) \{ \x23 (-?) ([^\}]*) \} (\s*)
+        }{
+            $2 ? '' : $1 . $4;
         }xmseg;
         return $template;
     }
