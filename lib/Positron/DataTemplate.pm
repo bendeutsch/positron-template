@@ -11,7 +11,9 @@ our $VERSION = 'v0.0.1';
 sub new {
     # Note: no Moose; we have no inheritance or attributes to speak of.
     my ($class) = @_;
-    my $self = {};
+    my $self = {
+        include_paths => ['.'],
+    };
     return bless($self, $class);
 }
 
@@ -46,6 +48,23 @@ sub _process_text {
         return "" . $env->get($1);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
         return (wantarray and not $1) ? () : '';
+    } elsif ($template =~ m{ \A \. \s* "([^"]+)" }xms) {
+        my $filename = $1;
+        require JSON;
+        require File::Slurp;
+        my $json = JSON->new();
+        my $file = undef;
+        foreach my $path (@{$self->{include_paths}}) {
+            if (-f $path . $filename) {
+                $file = $path . $filename; # TODO: platform-independent chaining
+            }
+        }
+        if ($file) {
+            my $result = $json->decode(File::Slurp::read_file($file));
+            return $self->_process($result, $env);
+        } else {
+            die "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
+        }
     } else {
         $template =~ s{
             \{ \$ ([^\}]*) \}
@@ -163,6 +182,11 @@ sub _process_hash {
         }
     }
     return \%result;
+}
+
+sub add_include_paths {
+    my ($self, @paths) = @_;
+    push @{$self->{'include_paths'}}, @paths;
 }
 
 1;

@@ -15,6 +15,7 @@ diag( "Testing Positron::DataTemplate $Positron::DataTemplate::VERSION, Perl $],
 for my $sub (qw(
     new
     process
+    add_include_paths
 )) {
     can_ok('Positron::DataTemplate', $sub);
 }
