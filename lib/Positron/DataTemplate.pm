@@ -95,9 +95,21 @@ sub _process_array {
         my $result = $cond ? $then : $else;
         return $self->_process($result, $env);
     } else {
-        return [
-            map $self->_process($_, $env), @$template
-        ];
+        my $return = [];
+        # potential structural comments
+        my $skip_next = 0;
+        foreach my $element (@elements) {
+            if ($element =~ m{ \A // }xms) {
+                last; # nothing more
+            } elsif ($element =~ m{ \A / }xms) {
+                $skip_next = 1; next;
+            } elsif ($skip_next) {
+                $skip_next = 0; next;
+            } else {
+                push @$return, $self->_process($element, $env);
+            }
+        }
+        return $return;
     }
 }
 sub _process_hash {
@@ -137,6 +149,14 @@ sub _process_hash {
     } else {
         # simple copy
         while (my ($key, $value) = each %$template) {
+            if ($key =~ m{ \A / }xms) {
+                # structural comment
+                next;
+            }
+            if ($value =~ m{ \A / }xms) {
+                # structural comment (forbidden on values)
+                die "Cannot comment out a value";
+            }
             $key = $self->_process($key, $env);
             $value = $self->_process($value, $env);
             $result{$key} = $value;
