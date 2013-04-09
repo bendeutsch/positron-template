@@ -4,6 +4,7 @@ use v5.8;
 use strict;
 use warnings;
 
+use Carp qw( croak );
 use Positron::Environment;
 
 our $VERSION = 'v0.0.1';
@@ -63,7 +64,7 @@ sub _process_text {
             my $result = $json->decode(File::Slurp::read_file($file));
             return $self->_process($result, $env);
         } else {
-            die "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
+            croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
         }
     } else {
         $template =~ s{
@@ -146,11 +147,11 @@ sub _process_hash {
     }
     if ($hash_construct) {
         my $e_content = $env->get($hash_construct->[1]);
-        die "Error: result of expression '".$hash_construct->[1]."' must be hash" unless ref($e_content) eq 'HASH';
+        croak "Error: result of expression '".$hash_construct->[1]."' must be hash" unless ref($e_content) eq 'HASH';
         while (my ($key, $value) = each %$e_content) {
             my $new_env = Positron::Environment->new( { key => $key, value => $value }, { parent => $env } );
             my $t_content = $self->_process( $template->{$hash_construct->[0]}, $new_env);
-            die "Error: content of % construct must be hash" unless ref($t_content) eq 'HASH';
+            croak "Error: content of % construct must be hash" unless ref($t_content) eq 'HASH';
             # copy into result
             foreach my $k (keys %$t_content) {
                 $result{$k} = $t_content->{$k};
@@ -174,7 +175,7 @@ sub _process_hash {
             }
             if ($value =~ m{ \A / }xms) {
                 # structural comment (forbidden on values)
-                die "Cannot comment out a value";
+                croak "Cannot comment out a value";
             }
             $key = $self->_process($key, $env);
             $value = $self->_process($value, $env);
