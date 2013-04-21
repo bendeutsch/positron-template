@@ -1,11 +1,11 @@
-Snowdrop expressions:
+Positron expressions:
 
 An expression with an environment resolves to a value.
 (This is different from coercion, where the value is adapted to it's use).
 
 Examples:
 
-abc: 
+abc:
 - environment lookup "abc".
 
 abc.def:
@@ -86,7 +86,51 @@ Negation: !(Expression)
 Grammar:
 EXPR = ALTERNATIVE ( [?:] ALTERNATIVE) *
 ALTERNATIVE = OPERAND | '!' ALTERNATIVE
-OPERAND = TERM ( '.' TERM )*
-TERM = SYMBOL | STRING | NUMBER | '(' EXPR ')' | SYMBOL '(' EXPR (, EXPR)* ')' 
+OPERAND = ETERM ( '.' DTERM )*
+ETERM = TERM
+DTERM = TERM
+TERM = SYMBOL | STRING | NUMBER | '(' EXPR ')' | FUNCCALL
+FUNCCALL = SYMBOL '(' EXPR (, EXPR)* ')'
+where ETERM means a SYMBOL is an environment lookup, while DTERM means it is direct or literal
 
 What about fun(abc)('param') ? I.e. Method chaining? Use 'TERM' instead of 'SYMBOL' in last form? (And use magic to end the left recursion)
+FUNCCALL = ETERM '(' EXPR (, EXPR)* ')'
+-> allows a.f(x), a.$f(x), a.f(x)(y) etc.
+Wait, no. a.f(x) has 'f' as a DTERM, not an ETERM :-/
+
+EXPR = ALTERNATIVE ( [?:] ALTERNATIVE) *
+ALTERNATIVE = OPERAND | '!' ALTERNATIVE
+OPERAND = ETERM ( '.' DTERM )*
+ETERM = VARIABLE | STRING | NUMBER | '(' EXPR ')' | EFUNC
+EFUNC = ETERM '(' EXPR ( ',' EXPR )* ')'
+DTERM = SELECTOR | '$' VARIABLE | NUMBER | '(' EXPR ')' | DFUNC
+DFUNC = DTERM '(' EXPR ( ',' EXPR )* ')'
+
+We're slipping again. What about "0.x" ? What about "x"? What about "a.x", "a.0" etc.?
+
+OPERAND = "a lone variable or literal" | "several things with dots between"
+"several things with dots between" = "the first dotted thing" . "dotted things in the middle" . "the last dotted thing"
+"the first dotted thing": not a literal string or number. Probably a named environment lookup, or named function call. Or '$' + name for even more indirection.
+"the last dotted thing": a name, a number, a method, "something that evaluates to a name".
+"dotted things in the middle": a name, a method, "something that evaluates to a name".
+
+We're slipping again. The two components of "a.x" mean the exact same thing: key 'a' in the global environment, and key 'x' in that.
+So no "ETERM"s or stuff like that.
+
+EXPR = ALTERNATIVE ( [?:] ALTERNATIVE) *
+ALTERNATIVE = OPERAND | '!' ALTERNATIVE
+OPERAND = LITERAL_STR | LITERAL_NUM | LTERM RTERM* { separated by '.' }
+LTERM = IDENTIFIER | '$' LTERM | '(' EXPR ')' | FUNCCALL
+RTERM = IDENTIFIER | '$' LTERM | INDEX | '(' EXPR ')' | FUNCCALL
+FUNCCALL = LTERM '(' ARGS ')'
+ARGS = EXPR* { separated by ',' }
+LITERAL_STR = '"' [^"]+ '"'
+LITERAL_NUM = +-? \d+
+SYMBOL = <rules for an identifier>
+INDEX = +-? \d
+
+We won't have 'a."key"' nor '"a".key' in this grammar. Also, '0.key' is right out. 'a.0' is ok, though.
+Not 'a.$0', though! Or '0(10,20)' nor 'a.0(10,20)' - wait, why not? No, too confusing, use '(a.0)(10,20)' for that. Sorry.
+Ok, wait, so '(a.0)' is a function, and call that?
+What about 'a.method' vs. 'a.method()' ? Perl can't really do that...
+
