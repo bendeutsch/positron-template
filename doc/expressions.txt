@@ -134,3 +134,24 @@ Not 'a.$0', though! Or '0(10,20)' nor 'a.0(10,20)' - wait, why not? No, too conf
 Ok, wait, so '(a.0)' is a function, and call that?
 What about 'a.method' vs. 'a.method()' ? Perl can't really do that...
 
+FINAL GRAMMAR:
+
+I've finally built a grammar that works and seems sufficient:
+
+expression: <leftop: alternative /([:?])/ alternative> { @{$item[1]} == 1 ? $item[1]->[0] : ['expression', @{$item[1]}]; }
+alternative: '!' alternative { ['not', $item[2]]; } | operand
+operand: string | number | lterm ('.' rterm)(s) { ['dot', $item[1], @{$item[2]}] } | lterm
+lterm: '(' expression ')' { $item[2] } | funccall | identifier | '$' lterm { ['env', $item[2]] }
+rterm: '(' expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { ['env', $item[2]] }
+string: '"' /[^"]*/ '"' { $item[2] } | '\'' /[^\']*/ '\'' { $item[2] } | '`' /[^`]*/ '`' { $item[2] }
+identifier: /[a-zA-Z_]\w*/ {['env', $item[1]]}
+key: /[a-zA-Z_]\w*/ { $item[1] }
+number: /[+-]?\d+(?:\.\d+)?/ { $item[1] }
+integer: /[+-]?\d+/ { $item[1] }
+funccall: identifier '(' expression(s? /\s*,\s*/) ')' { ['funccall', $item[1], @{$item[3]}] }
+methcall: key '(' expression(s? /\s*,\s*/) ')' { ['methcall', $item[1], @{$item[3]}] }
+
+Strings can't contain their delimiters, but there are three of them. Maybe a
+system with entities?
+
+We won't have 'a(10)(20)', but we have 'hash."long key"'.
