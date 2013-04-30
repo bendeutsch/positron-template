@@ -5,6 +5,7 @@ use strict;
 use warnings;
 
 use Carp qw( croak );
+use Data::Dump qw(dump);
 use Positron::Environment;
 use Positron::Expression;
 
@@ -67,6 +68,9 @@ sub _process_text {
         } else {
             croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
         }
+    } elsif ($template =~ m{ \A \^ \s* (.*) }xms) {
+        my $function = Positron::Expression::evaluate($1, $env);
+        return $function->();
     } else {
         $template =~ s{
             \{ \$ ([^\}]*) \}
@@ -120,16 +124,30 @@ sub _process_array {
         my $return = [];
         # potential structural comments
         my $skip_next = 0;
+        my $capturing_function = 0;
         foreach my $element (@elements) {
             if ($element =~ m{ \A // }xms) {
                 last; # nothing more
             } elsif ($element =~ m{ \A / }xms) {
-                $skip_next = 1; next;
+                $skip_next = 1;
+            } elsif ($element =~ m{ \A \^ \s* (.*) }xms) {
+                $capturing_function = Positron::Expression::evaluate($1, $env);
+                # do not push!
             } elsif ($skip_next) {
-                $skip_next = 0; next;
+                $skip_next = 0;
+            } elsif ($capturing_function) {
+                # we have a capturing function waiting for input
+                my $arg = $self->_process($element, $env);
+                push @$return, $capturing_function->($arg);
+                # no more waiting function
+                $capturing_function = 0;
             } else {
                 push @$return, $self->_process($element, $env);
             }
+        }
+        if ($capturing_function) {
+            # Oh no, a function waiting for args?
+            push @$return, $capturing_function->();
         }
         return $return;
     }
@@ -178,6 +196,17 @@ sub _process_hash {
             if ($value =~ m{ \A / }xms) {
                 # structural comment (forbidden on values)
                 croak "Cannot comment out a value";
+            }
+            if ($key =~ m{ \A \^ \s* (.*)}xms) {
+                # consuming function call (interpolates)
+                my $func = Positron::Expression::evaluate($1, $env);
+                my $value_in = $self->_process($value, $env);
+                my $hash_out = $func->($value_in);
+                # interpolate
+                foreach my $k (keys %$hash_out) {
+                    $result{$k} = $hash_out->{$k};
+                }
+                next;
             }
             $key = $self->_process($key, $env);
             $value = $self->_process($value, $env);
