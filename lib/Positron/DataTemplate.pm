@@ -6,6 +6,7 @@ use warnings;
 
 use Carp qw( croak );
 use Positron::Environment;
+use Positron::Expression;
 
 our $VERSION = 'v0.0.1';
 
@@ -44,9 +45,9 @@ sub _process {
 sub _process_text {
     my ($self, $template, $env) = @_;
     if ($template =~ m{ \A [&,] (.*) \z}xms) {
-        return $env->get($1);
+        return Positron::Expression::evaluate($1, $env);
     } elsif ($template =~ m{ \A \$ (.*) \z}xms) {
-        return "" . $env->get($1);
+        return "" . Positron::Expression::evaluate($1, $env);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
         return (wantarray and not $1) ? () : '';
     } elsif ($template =~ m{ \A \. \s* "([^"]+)" }xms) {
@@ -70,7 +71,7 @@ sub _process_text {
         $template =~ s{
             \{ \$ ([^\}]*) \}
         }{
-            my $replacement = $env->get($1) // '';
+            my $replacement = Positron::Expression::evaluate($1, $env) // '';
             "$replacement";
         }xmseg;
         $template =~ s{
@@ -91,7 +92,7 @@ sub _process_array {
         my $clause = $1;
         shift @elements;
         my $result = [];
-        my $list = $env->get($clause); # must be arrayref!
+        my $list = Positron::Expression::evaluate($clause, $env); # must be arrayref!
         foreach my $el (@$list) {
             my $new_env = Positron::Environment->new( $el, { parent => $env } );
             push @$result, map $self->_process($_, $new_env), @elements;
@@ -102,8 +103,9 @@ sub _process_array {
         my $clause = $1;
         shift @elements;
         my $has_else = (@elements > 1) ? 1 : 0;
-        my $cond = $env->get($clause); # can be anything!
+        my $cond = Positron::Expression::evaluate($clause, $env); # can be anything!
         # for Positron, empty lists and hashes are false!
+        # TODO: $cond = Positron::Expression::true($cond);
         if (ref($cond) eq 'ARRAY' and not @$cond) { $cond = 0; }
         if (ref($cond) eq 'HASH'  and not %$cond) { $cond = 0; }
         if (not $cond and not $has_else) {
@@ -146,7 +148,7 @@ sub _process_hash {
         }
     }
     if ($hash_construct) {
-        my $e_content = $env->get($hash_construct->[1]);
+        my $e_content = Positron::Expression::evaluate($hash_construct->[1], $env);
         croak "Error: result of expression '".$hash_construct->[1]."' must be hash" unless ref($e_content) eq 'HASH';
         while (my ($key, $value) = each %$e_content) {
             my $new_env = Positron::Environment->new( { key => $key, value => $value }, { parent => $env } );
@@ -158,7 +160,7 @@ sub _process_hash {
             }
         }
     } elsif ($switch_construct) {
-        my $e_content = $env->get($switch_construct->[1]); # The switch key
+        my $e_content = Positron::Expression::evaluate($switch_construct->[1], $env); # The switch key
         if (defined $e_content and exists $template->{$switch_construct->[0]}->{$e_content}) {
             return $self->_process($template->{$switch_construct->[0]}->{$e_content}, $env);
         } elsif (exists $template->{$switch_construct->[0]}->{'?'}) {
