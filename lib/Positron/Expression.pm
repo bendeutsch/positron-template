@@ -8,6 +8,7 @@ use Carp qw(croak);
 use Data::Dump qw(dump);
 use Positron::Environment;
 use Parse::RecDescent;
+use Scalar::Util qw(blessed);
 
 # The following grammer creates a "parse tree" 
 
@@ -24,7 +25,7 @@ operand: string | number | lterm ('.' rterm)(s) { ['dot', $item[1], @{$item[2]}]
 # The following parts are parts of whatever came before, and consequently looked
 # up there.
 lterm: '(' expression ')' { $item[2] } | funccall | identifier | '$' lterm { ['env', $item[2]] }
-rterm: '(' expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { ['env', $item[2]] }
+rterm: '(' expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { $item[2] }
 
 # Strings currently cannot contain their delimiters, sorry.
 string: '"' /[^"]*/ '"' { $item[2] } | /\'/ /[^\']*/ /\'/ { $item[2] } | '`' /[^`]*/ '`' { $item[2] }
