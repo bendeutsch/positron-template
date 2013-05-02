@@ -96,7 +96,7 @@ sub _evaluate {
             return ($obj->can($func))->($obj, @args);
         } elsif ($operand eq 'not') {
             my $what = _evaluate($args[0], $env);
-            return ! $what;
+            return ! true($what);
         } elsif ($operand eq 'expression') {
             my $left = _evaluate(shift @args, $env);
             while (@args) {
