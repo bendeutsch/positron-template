@@ -42,6 +42,8 @@ If-then-else:
 non-wrapping (interpolating) by default.
 Do *not* add '?-this' as double-interpolation!
 Hm, seems we are adding "value interpolation" anyway...
+[1, '<', [?if, a, b], 3] = [1, [?-if, a, b], 3] = [1, '<', [?-if, a, b], 3]
+-> all the same.
 
 Switches:
 Same
@@ -119,3 +121,9 @@ Conclusion:
 ['*-'...] is the same as '<', ['*'...]
 [x, '*-',...] is the same as [x, '<', '*', ... ]
 -> '-' for syntactic sugar only.
+
+How to implement:
+The individual _process-calls return lists anyway, so they do the unwrapping.
+'<' should propagate the info downwards that we "request interpolation", and
+the context ([] or {}) that we need it in.
+'*-' should also respond to the context, and interpolate as needed.
