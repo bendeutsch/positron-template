@@ -1,4 +1,9 @@
 package Positron::Environment;
+# VERSION
+
+=head1 NAME Positron::Environment - container class for template parameters
+
+=cut
 
 use strict;
 use warnings;

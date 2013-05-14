@@ -1,4 +1,9 @@
 package Positron::DataTemplate;
+# VERSION
+
+=head1 NAME Positron::DataTemplate - templating plain data to plain data
+
+=cut
 
 use v5.8;
 use strict;

@@ -1,4 +1,9 @@
 package Positron::Expression;
+# VERSION
+
+=head1 NAME Positron::Expression - a simple language for template parameters
+
+=cut
 
 use v5.8;
 use strict;

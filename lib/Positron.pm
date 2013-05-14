@@ -1,7 +1,5 @@
 package Positron;
-
-use strict;
-use warnings;
+# VERSION
 
 =head1 NAME
 
