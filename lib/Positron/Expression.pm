@@ -1,7 +1,9 @@
 package Positron::Expression;
 # VERSION
 
-=head1 NAME Positron::Expression - a simple language for template parameters
+=head1 NAME
+
+Positron::Expression - a simple language for template parameters
 
 =cut
 

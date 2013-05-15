@@ -1,7 +1,70 @@
 package Positron::DataTemplate;
 # VERSION
 
-=head1 NAME Positron::DataTemplate - templating plain data to plain data
+=head1 NAME
+
+Positron::DataTemplate - templating plain data to plain data
+
+=head1 SYNOPSIS
+
+    my $engine   = Positron::DataTemplate->new();
+    my $template = { contents => ['@list', '$title'] };
+    my $data     = { list => [
+        { title => 'first title', url => '/first-title.html' },
+        { title => 'second title', url => '/second-title.html' },
+    ] };
+    my $result   = $engine->process($template, $data);
+    # { contents => [ 'first title', 'second title' ] }
+
+=head1 DESCRIPTION
+
+C<Positron::DataTemplate> is a templating engine. Unlike most templating engines,
+though, it does not work on text, but on raw data: the template is (typically)
+a hash or array reference, and the result is one, too.
+
+This module rose from a script that regularly produced HTML snippets on disk,
+using regular, text-based templates. Each use case used the same data, but a different
+template. For one use case, however, the output was needed in
+JSON format, not HTML. One solution would have been to use the text-based
+templating system to produce a valid JSON document (quite risky). The other solution,
+which was taken at that time, was to transform the input data into the desired
+output structure in code, and use a JSON serializer on that, bypassing the template
+output.
+
+The third solution would have been to provide a template that did not directly
+produce the serialised JSON text, but described the data structure transformation
+in an on-disc format. By working only with structured data, and never with text,
+the serialized output must always be valid JSON.
+
+This (minus the serialization) is the domain of C<Positron::DataTemplate>.
+
+=head1 EXAMPLES
+
+This code is still being worked on. This includes the documentation. In the meanwhile,
+please use the following examples (and some trial & error) to gain a first look.
+Alternatively, if you have access to the tests of this distribution, these also
+give some examples.
+
+=head2 Text replacement
+
+  [ '$one', '{$two}', 'and {$three}' ] + { one => 1, two => 2, three => 3 }
+  -> [ '1', '2', 'and 3' ]
+
+=head2 Direct inclusion
+
+  [ '&this', '&that' ] + { this => [1, 2], that => { 3 => 4 } }
+  -> [ [1, 2], { 3 => 4} ]
+
+=head2 Loops
+
+  { titles => ['@list', '{$id}: {$title}'] }
+  + { list => [ { id => 1, title => 'one' }, { id => 2, title => 'two' } ] }
+  -> { titles => [ '1: one', '2: two' ] }
+
+=head2 Conditions
+
+  { checked => ['?active', 'yes', 'no] } + { active => 1 }
+  -> { checked => 'yes' }
 
 =cut
 
@@ -13,8 +76,6 @@ use Carp qw( croak );
 use Data::Dump qw(dump);
 use Positron::Environment;
 use Positron::Expression;
-
-our $VERSION = 'v0.0.1';
 
 sub new {
     # Note: no Moose; we have no inheritance or attributes to speak of.
