@@ -68,7 +68,7 @@ give some examples.
 
 =cut
 
-use v5.8;
+use v5.10;
 use strict;
 use warnings;
 

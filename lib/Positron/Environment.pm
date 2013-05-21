@@ -7,6 +7,7 @@ Positron::Environment - container class for template parameters
 
 =cut
 
+use v5.10;
 use strict;
 use warnings;
 use Carp qw(croak);
