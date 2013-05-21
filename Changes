@@ -1,0 +1,8 @@
+{{$NEXT}}
+
+  Minor release, making the Perl version explicit (for cpantesters),
+  and adding some build infrastructure.
+
+v0.0.1    2013-05-17 13:49:50 UTC
+
+  First version, about half of Positron::DataTemplate usable
