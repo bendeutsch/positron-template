@@ -66,6 +66,39 @@ give some examples.
   { checked => ['?active', 'yes', 'no] } + { active => 1 }
   -> { checked => 'yes' }
 
+=head2 Interpolation (works with a lot of constructs)
+
+  [1, '&list', 4] + { list => [2, 3] }
+  -> [1, [2, 3], 4]
+  [1, '&-list', 4] + { list => [2, 3] }
+  -> [1, 2, 3, 4]
+  [1, '<', '&list', 4] + { list => [2, 3] }
+  -> [1, 2, 3, 4]
+
+  { '< 1' => { a => 'b' }, '< 2' => { c => 'd', e => 'f' }
+  -> { a => 'b', c => 'd', e => 'f' }
+  { '< 1' => '&hash', two => 2 } + { hash => { one => 1 } }
+  -> { one => 1, two => 2 }
+
+=head2 Comments
+
+  'this is {#not} a comment' -> 'this is a comment'
+  [1, '#comment', 2, 3]      -> [1, 2, 3]
+  [1, '/comment', 2, 3]      -> [1, 3]
+  [1, '//comment', 2, 3]     -> [1]
+  { 1 => 2, '#3' => 4 }      -> { 1 => 2, '' => 4 }
+  { 1 => 2, '/3' => 4 }      -> { 1 => 2 }
+
+=head2 File inclusion (requires L<JSON> and L<File::Slurp>)
+
+  [1, '. "/tmp/data.json"', 3] + '{ key: "value"}'
+  -> [1, { key => 'value' }, 3]
+
+=head2 Funtions on data
+
+  [1, '^len', "abcde", 2] + { len => \&CORE::length }
+  -> [1, 5, 2]
+
 =cut
 
 use v5.10;
@@ -340,4 +373,58 @@ sub add_include_paths {
     push @{$self->{'include_paths'}}, @paths;
 }
 
-1;
+1; # End of Positron::DataTemplate
+
+__END__
+
+=head1 AUTHOR
+
+Ben Deutsch, C<< <ben at bendeutsch.de> >>
+
+=head1 BUGS
+
+None known so far, though keep in mind that this is alpha software.
+
+Please report any bugs or feature requests to C<bug-positron at rt.cpan.org>, or through
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Positron>.  I will be notified, and then you'll
+automatically be notified of progress on your bug as I make changes.
+
+=head1 SUPPORT
+
+This module is part of the Positron distribution.
+
+You can find documentation for this distribution with the perldoc command.
+
+    perldoc Positron
+
+You can also look for information at:
+
+=over 4
+
+=item * RT: CPAN's request tracker (report bugs here)
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Positron>
+
+=item * AnnoCPAN: Annotated CPAN documentation
+
+L<http://annocpan.org/dist/Positron>
+
+=item * CPAN Ratings
+
+L<http://cpanratings.perl.org/d/Positron>
+
+=item * Search CPAN
+
+L<http://search.cpan.org/dist/Positron/>
+
+=back
+
+
+=head1 LICENSE AND COPYRIGHT
+
+Copyright 2013 Ben Deutsch. All rights reserved.
+
+This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+See L<http://dev.perl.org/licenses/> for more information.
+
+=cut
