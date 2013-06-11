@@ -1,5 +1,9 @@
 {{$NEXT}}
 
+  - Positron::Environment can take arbitrary scalar data
+  - Positron::Environment with special key '_' which gets / sets
+    the entire data
+
 v0.0.3    2013-06-06 18:26:18 UTC
 
   - Interpolation.
