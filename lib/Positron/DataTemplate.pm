@@ -124,45 +124,38 @@ sub process {
     # Returns (undef) in list context - is this correct?
     return undef unless defined $template;
     $env = Positron::Environment->new($env);
-    my @return = $self->_process($template, $env, '', 0);
-    # If called in scalar context, the caller "knows" that there will
-    # only be one element -> shortcut it.
-    return wantarray ? @return : $return[0];
-}
-
-sub _interpolate {
-    my ($value, $context, $interpolate) = @_;
-    return $value unless $interpolate;
-    if ($context eq 'array' and ref($value) eq 'ARRAY') {
-        return @$value;
-    } elsif ($context eq 'hash' and ref($value) eq 'HASH') {
-        return %$value;
+    my ($return, $interpolate) = $self->_process($template, $env);
+    # $return may be an interpolating construct,
+    # which depends on the context here.
+    if (wantarray and $interpolate and ref($return) eq 'ARRAY') {
+        return @$return;
     } else {
-        return $value;
+        return $return;
     }
 }
 
 sub _process {
-    my ($self, $template, $env, $context, $interpolate) = @_;
+    my ($self, $template, $env) = @_;
     if (not ref($template)) {
-        return $self->_process_text($template, $env, $context, $interpolate);
+        return $self->_process_text($template, $env);
     } elsif (ref($template) eq 'ARRAY') {
-        return $self->_process_array($template, $env, $context, $interpolate);
+        return $self->_process_array($template, $env);
     } elsif (ref($template) eq 'HASH') {
-        return $self->_process_hash($template, $env, $context, $interpolate);
+        return $self->_process_hash($template, $env);
     }
     return $template; # TODO: deep copy?
 }
 
 sub _process_text {
-    my ($self, $template, $env, $context, $interpolate) = @_;
+    my ($self, $template, $env) = @_;
+    my $interpolate = 0;
     if ($template =~ m{ \A [&,] (-?) (.*) \z}xms) {
         if ($1) { $interpolate = 1; }
-        return _interpolate(Positron::Expression::evaluate($2, $env), $context, $interpolate);
+        return (Positron::Expression::evaluate($2, $env), $interpolate);
     } elsif ($template =~ m{ \A \$ (.*) \z}xms) {
-        return "" . Positron::Expression::evaluate($1, $env);
+        return ("" . Positron::Expression::evaluate($1, $env), 0);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
-        return (wantarray and not $1) ? () : '';
+        return ('', ($1 ? 0 : 1));
     } elsif ($template =~ m{ \A \. (-?) \s* (.*) }xms) {
         if ($1) { $interpolate = 1; }
         my $filename = Positron::Expression::evaluate($2, $env);
@@ -177,14 +170,17 @@ sub _process_text {
         }
         if ($file) {
             my $result = $json->decode(File::Slurp::read_file($file));
-            return $self->_process($result, $env, $context, $interpolate);
+            my ($return, $i) = $self->_process($result, $env);
+            $interpolate ||= $i;
+            return ($return, $interpolate);
         } else {
             croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
         }
     } elsif ($template =~ m{ \A \^ (-?) \s* (.*) }xms) {
-        if ($1) { $interpolate = 1; }
+        # Special non-list case, e.g. hash value (not key)
+        # cannot interpolate
         my $function = Positron::Expression::evaluate($2, $env);
-        return _interpolate($function->(), $context, $interpolate);
+        return (scalar($function->()), 0);
     } else {
         $template =~ s{
             \{ \$ ([^\}]*) \}
@@ -197,13 +193,14 @@ sub _process_text {
         }{
             $2 ? '' : $1 . $4;
         }xmseg;
-        return $template;
+        return ($template, 0);
     }
 }
 
 sub _process_array {
-    my ($self, $template, $env, $context, $interpolate) = @_;
-    return _interpolate([], $context, $interpolate) unless @$template;
+    my ($self, $template, $env) = @_;
+    my $interpolate = 0;
+    return ([], 0) unless @$template;
     my @elements = @$template;
     if ($elements[0] =~ m{ \A \@ (-?) (.*) \z}xms) {
         # list iteration
@@ -211,13 +208,20 @@ sub _process_array {
         my $clause = $2;
         shift @elements;
         my $result = [];
-        my $list = Positron::Expression::evaluate($clause, $env); # must be arrayref!
+        my $list = Positron::Expression::evaluate($clause, $env);
+        if (not ref($list) eq 'ARRAY') {
+            # If it's not a list, make it a one-element list.
+            # Useful for forcing interpolation via '[@- ""]' or aliasing (to be introduced)
+            $list = [$list];
+        }
         foreach my $el (@$list) {
             my $new_env = Positron::Environment->new( $el, { parent => $env } );
-            # Do not interpolate here, interpolate the result
-            push @$result, map $self->_process($_, $new_env, 'array', 0), @elements;
+            # evaluate rest of list as array,
+            my ($return, undef) = $self->_process_array(\@elements, $new_env);
+            # and flatten
+            push @$result, @$return;
         }
-        return _interpolate($result, $context, $interpolate);
+        return ($result, $interpolate);
     } elsif ($elements[0] =~ m{ \A \? (-?) (.*) \z}xms) {
         # conditional
         if ($1) { $interpolate = 1; }
@@ -226,23 +230,24 @@ sub _process_array {
         my $has_else = (@elements > 1) ? 1 : 0;
         my $cond = Positron::Expression::evaluate($clause, $env); # can be anything!
         # for Positron, empty lists and hashes are false!
-        # TODO: $cond = Positron::Expression::true($cond);
-        if (ref($cond) eq 'ARRAY' and not @$cond) { $cond = 0; }
-        if (ref($cond) eq 'HASH'  and not %$cond) { $cond = 0; }
+        $cond = Positron::Expression::true($cond);
         if (not $cond and not $has_else) {
-            # no else clause, return empty list on false
-            return ();
+            # no else clause, return empty on false
+            # (please interpolate!)
+            return ('', 1);
         }
         my $then = shift @elements;
         my $else = shift @elements;
         my $result = $cond ? $then : $else;
-        return $self->_process($result, $env, $context, $interpolate);
+        my ($return, $i) = $self->_process($result, $env);
+        $interpolate ||= $i;
+        return ($return, $interpolate);
     } else {
         my $return = [];
         # potential structural comments
         my $skip_next = 0;
         my $capturing_function = 0;
-        my $interpolate_next = 0;
+        my $interpolate_next = 0; # actual count
         my $is_first_element = 1;
         foreach my $element (@elements) {
             if ($element =~ m{ \A // (-?) }xms) {
@@ -259,15 +264,37 @@ sub _process_array {
                 $skip_next = 0;
             } elsif ($capturing_function) {
                 # we have a capturing function waiting for input
-                my $arg = $self->_process($element, $env);
-                push @$return, $capturing_function->($arg);
+                my ($arg, $i) = $self->_process($element, $env);
+                # interpolate: could be ['@- ""', arg1, arg2]
+                if (ref($arg) eq 'ARRAY' and $i) {
+                    push @$return, $capturing_function->(@$arg);
+                } elsif (ref($arg) eq 'HASH' and $i) {
+                    push @$return, $capturing_function->(%$arg);
+                } else {
+                    push @$return, $capturing_function->($arg);
+                }
                 # no more waiting function
                 $capturing_function = 0;
             } elsif ($element =~ m{ \A < }xms) {
-                $interpolate_next = 1;
+                $interpolate_next += 1; # actual count
             } else {
-                push @$return, $self->_process($element, $env, 'array', $interpolate_next);
+                my ($result, $interpolate_me) = $self->_process($element, $env);
+                my @results = ($result);
+                $interpolate_next += $interpolate_me;
+                while ($interpolate_next > 0 and @results) {
+                    if (ref($results[0]) eq 'ARRAY') {
+                        my $array = shift @results;
+                        unshift @results, @$array;
+                    } elsif (($results[0] // '') eq '') {
+                        # Note: the empty string, if it wants to interpolate, becomes the empty list
+                        #       i.e. just drop it.
+                        shift @results;
+                    } else {
+                        last; # conditions can't match any more
+                    }
+                }
                 $interpolate_next = 0;
+                push @$return, @results;
             }
             $is_first_element = 0; # not anymore
         }
@@ -275,12 +302,12 @@ sub _process_array {
             # Oh no, a function waiting for args?
             push @$return, $capturing_function->();
         }
-        return _interpolate($return, $context, $interpolate);
+        return ($return, $interpolate);
     }
 }
 sub _process_hash {
-    my ($self, $template, $env, $context, $interpolate) = @_;
-    return _interpolate({}, $context, $interpolate) unless %$template;
+    my ($self, $template, $env) = @_;
+    return ({}, 0) unless %$template;
     my %result = ();
     my $hash_construct = undef;
     my $switch_construct = undef;
@@ -288,7 +315,7 @@ sub _process_hash {
         if ($key =~ m{ \A \% (.*) \z }xms) {
             $hash_construct = [$key, $1]; last;
         } elsif ($key =~ m{ \A \? (.*) \z }xms) {
-            # '?-': activate interpolate ?
+            # basically auto-interpolates
             $switch_construct = [$key, $1]; last;
         }
     }
@@ -297,22 +324,24 @@ sub _process_hash {
         croak "Error: result of expression '".$hash_construct->[1]."' must be hash" unless ref($e_content) eq 'HASH';
         while (my ($key, $value) = each %$e_content) {
             my $new_env = Positron::Environment->new( { key => $key, value => $value }, { parent => $env } );
-            my $t_content = $self->_process( $template->{$hash_construct->[0]}, $new_env);
+            my ($t_content, undef) = $self->_process( $template->{$hash_construct->[0]}, $new_env);
             croak "Error: content of % construct must be hash" unless ref($t_content) eq 'HASH';
-            # copy into result
+            # copy into result (automatically interpolates)
             foreach my $k (keys %$t_content) {
                 $result{$k} = $t_content->{$k};
             }
         }
     } elsif ($switch_construct) {
-        # '<': pass downwards ?
         my $e_content = Positron::Expression::evaluate($switch_construct->[1], $env); # The switch key
-        if (defined $e_content and exists $template->{$switch_construct->[0]}->{$e_content}) {
-            return $self->_process($template->{$switch_construct->[0]}->{$e_content}, $env);
+        # escape the '?' by adding another one!
+        my $qe_content = ( defined $e_content and $e_content =~m{ \A \?}xms ) ? "?$e_content" : $e_content;
+        if (defined $e_content and exists $template->{$switch_construct->[0]}->{$qe_content}) {
+            # We have no interpolation of our own, just pass the below up.
+            return $self->_process($template->{$switch_construct->[0]}->{$qe_content}, $env);
         } elsif (exists $template->{$switch_construct->[0]}->{'?'}) {
             return $self->_process($template->{$switch_construct->[0]}->{'?'}, $env);
         } else {
-            return ();
+            return ('', 1);
         }
     } else {
         # simple copy
@@ -337,8 +366,8 @@ sub _process_hash {
             my $value = $template->{$key};
             if ($key =~ m{ \A < }xms) {
                 # interpolate
-                my %values = $self->_process($value, $env, 'hash', 1);
-                %result = (%result, %values);
+                my ($values, $interpolate) = $self->_process($value, $env);
+                %result = (%result, %$values);
                 next;
             }
             if ($key =~ m{ \A / }xms) {
@@ -352,7 +381,7 @@ sub _process_hash {
             if ($key =~ m{ \A \^ \s* (.*)}xms) {
                 # consuming function call (interpolates)
                 my $func = Positron::Expression::evaluate($1, $env);
-                my $value_in = $self->_process($value, $env, '', 0);
+                my ($value_in, undef) = $self->_process($value, $env);
                 my $hash_out = $func->($value_in);
                 # interpolate
                 foreach my $k (keys %$hash_out) {
@@ -360,12 +389,12 @@ sub _process_hash {
                 }
                 next;
             }
-            $key = $self->_process($key, $env, '', 0);
-            $value = $self->_process($value, $env, '', 0);
+            ($key, undef) = $self->_process($key, $env);
+            ($value, undef) = $self->_process($value, $env);
             $result{$key} = $value;
         }
     }
-    return _interpolate(\%result, $context, $interpolate);
+    return (\%result, 0);
 }
 
 sub add_include_paths {
