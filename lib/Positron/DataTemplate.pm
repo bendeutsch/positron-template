@@ -151,14 +151,28 @@ sub _process_text {
     my $interpolate = 0;
     if ($template =~ m{ \A [&,] (-?) (.*) \z}xms) {
         if ($1) { $interpolate = 1; }
-        return (Positron::Expression::evaluate($2, $env), $interpolate);
+        my $expr = $2;
+        if ($expr eq ':') {
+            # Special case: internal wrap evaluation
+            my ($return, $i) = $self->_process($env->get(':'), $env);
+            $interpolate ||= $i;
+            return ($return, $interpolate);
+        } else {
+            return (Positron::Expression::evaluate($expr, $env), $interpolate);
+        }
     } elsif ($template =~ m{ \A \$ (.*) \z}xms) {
         return ("" . Positron::Expression::evaluate($1, $env), 0);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
         return ('', ($1 ? 0 : 1));
-    } elsif ($template =~ m{ \A \. (-?) \s* (.*) }xms) {
-        if ($1) { $interpolate = 1; }
-        my $filename = Positron::Expression::evaluate($2, $env);
+    } elsif ($template =~ m{ \A ([.:]) (-?) \s* (.+) }xms) {
+        my $filename_expr = $3;
+        if ($2) { $interpolate = 1; }
+        my $new_env = $env;
+        if ($1 eq ':') {
+            # A wrap in text context, explicitly unset ':'.
+            $new_env = Positron::Environment->new({ ':' => undef }, { parent => $env });
+        }
+        my $filename = Positron::Expression::evaluate($filename_expr, $new_env);
         require JSON;
         require File::Slurp;
         my $json = JSON->new();
@@ -170,12 +184,18 @@ sub _process_text {
         }
         if ($file) {
             my $result = $json->decode(File::Slurp::read_file($file));
-            my ($return, $i) = $self->_process($result, $env);
+            my ($return, $i) = $self->_process($result, $new_env);
             $interpolate ||= $i;
             return ($return, $interpolate);
         } else {
             croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
         }
+    } elsif ($template =~ m{ \A \: (-?) \s* \z }xms) {
+        # wrap evaluation
+        if ($1) { $interpolate = 1; }
+        my ($return, $i) = $self->_process($env->get(':'), $env);
+        $interpolate ||= $i;
+        return ($return, $interpolate);
     } elsif ($template =~ m{ \A \^ (-?) \s* (.*) }xms) {
         # Special non-list case, e.g. hash value (not key)
         # cannot interpolate
@@ -247,6 +267,7 @@ sub _process_array {
         # potential structural comments
         my $skip_next = 0;
         my $capturing_function = 0;
+        my $capturing_wrap = 0;
         my $interpolate_next = 0; # actual count
         my $is_first_element = 1;
         foreach my $element (@elements) {
@@ -259,6 +280,25 @@ sub _process_array {
             } elsif ($element =~ m{ \A \^ (-?) \s* (.*) }xms) {
                 if ($is_first_element and $1) { $interpolate = 1; }
                 $capturing_function = Positron::Expression::evaluate($2, $env);
+                # do not push!
+            } elsif ($element =~ m{ \A \: (-?) \s* (.+) }xms) {
+                if ($is_first_element and $1) { $interpolate = 1; }
+                my $filename = Positron::Expression::evaluate($2, $env);
+                require JSON;
+                require File::Slurp;
+                my $json = JSON->new();
+                my $file = undef;
+                foreach my $path (@{$self->{include_paths}}) {
+                    if (-f $path . $filename) {
+                        $file = $path . $filename; # TODO: platform-independent chaining
+                    }
+                }
+                if ($file) {
+                    my $contents = File::Slurp::read_file($file);
+                    $capturing_wrap = $json->decode($contents);
+                } else {
+                    croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
+                }
                 # do not push!
             } elsif ($skip_next) {
                 $skip_next = 0;
@@ -275,6 +315,21 @@ sub _process_array {
                 }
                 # no more waiting function
                 $capturing_function = 0;
+            } elsif ($capturing_wrap) {
+                # we have a capturing wrap file waiting for input
+                # Note: neither the wrap nor the element have been evaluated yet!
+                my $new_env = Positron::Environment->new({ ':' => $element }, { parent => $env });
+                my ($result, $i) = $self->_process($capturing_wrap, $new_env);
+                # interpolate: could be ['@- ""', arg1, arg2]
+                if (ref($result) eq 'ARRAY' and $i) {
+                    push @$return, @$result;
+                } elsif (ref($result) eq 'HASH' and $i) {
+                    push @$return, %$result;
+                } else {
+                    push @$return, $result;
+                }
+                # no more waiting wrap
+                $capturing_wrap = 0;
             } elsif ($element =~ m{ \A < }xms) {
                 $interpolate_next += 1; # actual count
             } else {
@@ -292,6 +347,7 @@ sub _process_array {
                     } else {
                         last; # conditions can't match any more
                     }
+                    $interpolate_next--;
                 }
                 $interpolate_next = 0;
                 push @$return, @results;
@@ -301,6 +357,18 @@ sub _process_array {
         if ($capturing_function) {
             # Oh no, a function waiting for args?
             push @$return, $capturing_function->();
+        }
+        if ($capturing_wrap) {
+            # Oh no, a wrap waiting for args?
+            my $new_env = Positron::Environment->new({ ':' => undef }, { parent => $env });
+            my ($result, $i) = $self->_process($capturing_wrap, $new_env);
+            if (ref($result) eq 'ARRAY' and $i) {
+                push @$return, @$result;
+            } elsif (ref($result) eq 'HASH' and $i) {
+                push @$return, %$result;
+            } else {
+                push @$return, $result;
+            }
         }
         return ($return, $interpolate);
     }
