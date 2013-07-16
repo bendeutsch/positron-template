@@ -37,6 +37,23 @@ is_deeply($template->process(
     "Wrap in list, ':' only"
 );
 
+# Hash-Key: auto-interpolate
+is_deeply($template->process(
+    { one => 1, ': "wrap.json"' => { color => 'red', subtitle => '$subtitle' }, two => 2}, $data),
+    { one => 1, version => 1.0, title => 'The title', contents => {
+        color => 'red', subtitle => 'The subtitle', }, two => 2},
+    "Wrap in hash key"
+);
+
+is_deeply($template->process(
+    { one => 1, ': "wrap_colon.json"' => { color => 'red', subtitle => '$subtitle' }, two => 2}, $data),
+    { one => 1, version => 1.0, title => 'The title', contents => {
+        color => 'red', subtitle => 'The subtitle', }, two => 2},
+    "Wrap in hash key, : only"
+);
+
+
+
 # Interpolation
 
 done_testing();

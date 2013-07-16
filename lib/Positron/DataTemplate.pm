@@ -183,7 +183,7 @@ sub _process_text {
             }
         }
         if ($file) {
-            my $result = $json->decode(File::Slurp::read_file($file));
+            my $result = $json->decode(scalar(File::Slurp::read_file($file)));
             my ($return, $i) = $self->_process($result, $new_env);
             $interpolate ||= $i;
             return ($return, $interpolate);
@@ -451,6 +451,33 @@ sub _process_hash {
                 my $func = Positron::Expression::evaluate($1, $env);
                 my ($value_in, undef) = $self->_process($value, $env);
                 my $hash_out = $func->($value_in);
+                # interpolate
+                foreach my $k (keys %$hash_out) {
+                    $result{$k} = $hash_out->{$k};
+                }
+                next;
+            }
+            if ($key =~ m{ \A : (-?) \s* (.+) }xms) {
+                # consuming wrap (interpolates in any case)
+                my $capturing_wrap;
+                my $filename = Positron::Expression::evaluate($2, $env);
+                require JSON;
+                require File::Slurp;
+                my $json = JSON->new();
+                my $file = undef;
+                foreach my $path (@{$self->{include_paths}}) {
+                    if (-f $path . $filename) {
+                        $file = $path . $filename; # TODO: platform-independent chaining
+                    }
+                }
+                if ($file) {
+                    my $contents = File::Slurp::read_file($file);
+                    $capturing_wrap = $json->decode($contents);
+                } else {
+                    croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
+                }
+                my $new_env = Positron::Environment->new({ ':' => $value }, { parent => $env });
+                my ($hash_out, undef) = $self->_process($capturing_wrap, $new_env);
                 # interpolate
                 foreach my $k (keys %$hash_out) {
                     $result{$k} = $hash_out->{$k};
