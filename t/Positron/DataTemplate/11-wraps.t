@@ -16,6 +16,7 @@ $template->add_include_paths('t/Positron/DataTemplate/');
 my $data = {
     title => 'The title',
     subtitle => 'The subtitle',
+    list => [20, 21],
 };
 
 # This cannot work, for two reasons:
@@ -65,7 +66,62 @@ is_deeply($template->process(
     "Wrap in hash value, : only"
 );
 
-
 # Interpolation
+
+is_deeply($template->process(
+    [1, ': "wrap_array.json"', ['&list' ], 3], $data),
+    [1, [ 11, 'The title', [[20, 21]], 12,], 3 ],
+    "Wrap of list"
+);
+
+is_deeply($template->process(
+    [1, ':- "wrap_array.json"', [ '&-list' ], 3], $data),
+    [1, 11, 'The title', [ 20, 21 ], 12, 3 ],
+    "Wrap of list, and-minus"
+);
+
+is_deeply($template->process(
+    [1, ':- "wrap_array.json"', [ '@-list', '&_' ], 3], $data),
+    [1, 11, 'The title', 20, 21 , 12, 3 ],
+    "Wrap of list, at-minus"
+);
+
+
+is_deeply($template->process(
+    [1, ': "wrap_array_interp.json"', ['&list', 13 ], 3], $data),
+    [1, [ 11, 'The title', [20, 21], 13, 12,], 3 ],
+    "Wrap of list interp"
+);
+
+is_deeply($template->process(
+    [1, ':- "wrap_array_interp.json"', [ '&-list', 13 ], 3], $data),
+    [1, 11, 'The title', 20, 21, 13, 12, 3 ],
+    "Wrap of list interp, and-minus"
+);
+
+is_deeply($template->process(
+    [1, ':- "wrap_array_interp.json"', [ '@-list', '&_' ], 3], $data),
+    [1, 11, 'The title', 20, 21 , 12, 3 ],
+    "Wrap of list interp, at-minus"
+);
+
+
+is_deeply($template->process(
+    [1, ': "wrap_array_minus.json"', ['&list', 13 ], 3], $data),
+    [1, [ 11, 'The title', [20, 21], 13, 12,], 3 ],
+    "Wrap of list minus"
+);
+
+is_deeply($template->process(
+    [1, ':- "wrap_array_minus.json"', [ '&-list', 13 ], 3], $data),
+    [1, 11, 'The title', 20, 21, 13, 12, 3 ],
+    "Wrap of list minus, and-minus"
+);
+
+is_deeply($template->process(
+    [1, ':- "wrap_array_minus.json"', [ '@-list', '&_' ], 3], $data),
+    [1, 11, 'The title', 20, 21 , 12, 3 ],
+    "Wrap of list minus, at-minus"
+);
 
 done_testing();

@@ -148,6 +148,7 @@ sub _process {
 
 sub _process_text {
     my ($self, $template, $env) = @_;
+    return ($template, 0) unless $template; # undef, '', 0, or '0'
     my $interpolate = 0;
     if ($template =~ m{ \A [&,] (-?) (.*) \z}xms) {
         if ($1) { $interpolate = 1; }
@@ -164,7 +165,7 @@ sub _process_text {
         return ("" . Positron::Expression::evaluate($1, $env), 0);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
         return ('', ($1 ? 0 : 1));
-    } elsif ($template =~ m{ \A ([.:]) (-?) \s* (.+) }xms) {
+    } elsif ($template =~ m{ \A ([.:]) (-?) \s* ([^\s-].*) }xms) {
         my $filename_expr = $3;
         if ($2) { $interpolate = 1; }
         my $new_env = $env;
@@ -268,6 +269,7 @@ sub _process_array {
         my $skip_next = 0;
         my $capturing_function = 0;
         my $capturing_wrap = 0;
+        my $capturing_wrap_interpolates = 0;
         my $interpolate_next = 0; # actual count
         my $is_first_element = 1;
         foreach my $element (@elements) {
@@ -277,13 +279,16 @@ sub _process_array {
             } elsif ($element =~ m{ \A / (-?) }xms) {
                 if ($is_first_element and $1) { $interpolate = 1; }
                 $skip_next = 1;
-            } elsif ($element =~ m{ \A \^ (-?) \s* (.*) }xms) {
+            } elsif ($element =~ m{ \A \^ (-?) \s* ([^\s-].*) }xms) {
                 if ($is_first_element and $1) { $interpolate = 1; }
                 $capturing_function = Positron::Expression::evaluate($2, $env);
                 # do not push!
-            } elsif ($element =~ m{ \A \: (-?) \s* (.+) }xms) {
-                if ($is_first_element and $1) { $interpolate = 1; }
+            } elsif ($element =~ m{ \A \: (-?) \s* ([^\s-].*) }xms) {
+                $capturing_wrap_interpolates = $1 ? 1 : 0;
                 my $filename = Positron::Expression::evaluate($2, $env);
+                if (!$filename) {
+                    warn "# no filename in expression '$element'?";
+                }
                 require JSON;
                 require File::Slurp;
                 my $json = JSON->new();
@@ -320,7 +325,9 @@ sub _process_array {
                 # Note: neither the wrap nor the element have been evaluated yet!
                 my $new_env = Positron::Environment->new({ ':' => $element }, { parent => $env });
                 my ($result, $i) = $self->_process($capturing_wrap, $new_env);
+                $i ||= $capturing_wrap_interpolates;
                 # interpolate: could be ['@- ""', arg1, arg2]
+                #              or [1, ':- file', 'contents', 2]
                 if (ref($result) eq 'ARRAY' and $i) {
                     push @$return, @$result;
                 } elsif (ref($result) eq 'HASH' and $i) {
