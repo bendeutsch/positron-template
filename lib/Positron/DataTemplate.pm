@@ -94,6 +94,12 @@ give some examples.
   [1, '. "/tmp/data.json"', 3] + '{ key: "value"}'
   -> [1, { key => 'value' }, 3]
 
+=head2 File wrapping (also requires L<JSON> and L<File::Slurp>)
+
+  [1, ': "/tmp/wrap.json"', { animal => 'dog' }, 3]
+  + '{ key: "value", contents: ":"}'
+  -> [1, { key => 'value', contents => { animal => 'dog' }, 3]
+
 =head2 Funtions on data
 
   [1, '^len', "abcde", 2] + { len => \&CORE::length }
