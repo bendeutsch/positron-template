@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+v0.0.4    2013-07-25 18:19:55 UTC
+
   - Positron::Environment can take arbitrary scalar data
   - Positron::Environment with special key '_' which gets / sets
     the entire data
