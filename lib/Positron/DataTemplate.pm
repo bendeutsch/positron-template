@@ -171,6 +171,10 @@ sub _process_text {
         return ("" . Positron::Expression::evaluate($1, $env), 0);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
         return ('', ($1 ? 0 : 1));
+    } elsif ($template =~ m{ \A = \s* (\w+) \s+ (.*) }xms) {
+        # Always interpolates, the new identifier means nothing
+        Positron::Expression::evaluate($2, $env); # still perform it, means nothing
+        return ('', 1);
     } elsif ($template =~ m{ \A ([.:]) (-?) \s* ([^\s-].*) }xms) {
         my $filename_expr = $3;
         if ($2) { $interpolate = 1; }
@@ -285,6 +289,8 @@ sub _process_array {
             } elsif ($element =~ m{ \A / (-?) }xms) {
                 if ($is_first_element and $1) { $interpolate = 1; }
                 $skip_next = 1;
+            } elsif ($skip_next) {
+                $skip_next = 0;
             } elsif ($element =~ m{ \A \^ (-?) \s* ([^\s-].*) }xms) {
                 if ($is_first_element and $1) { $interpolate = 1; }
                 $capturing_function = Positron::Expression::evaluate($2, $env);
@@ -311,8 +317,13 @@ sub _process_array {
                     croak "Can't find template '$filename' in " . join(':', @{$self->{include_paths}});
                 }
                 # do not push!
-            } elsif ($skip_next) {
-                $skip_next = 0;
+            } elsif ($element =~ m{ \A = (-?) \s* (\w+) \s+ (.*) }xms) {
+                if ($is_first_element and $1) { $interpolate = 1; }
+                my $new_key = $2;
+                my $new_value = Positron::Expression::evaluate($3, $env);
+                # We change env here!
+                $env = Positron::Environment->new({}, { parent => $env });
+                $env->set($new_key, $new_value); # Handles '_' on either side
             } elsif ($capturing_function) {
                 # we have a capturing function waiting for input
                 my ($arg, $i) = $self->_process($element, $env);
@@ -491,6 +502,20 @@ sub _process_hash {
                 }
                 my $new_env = Positron::Environment->new({ ':' => $value }, { parent => $env });
                 my ($hash_out, undef) = $self->_process($capturing_wrap, $new_env);
+                # interpolate
+                foreach my $k (keys %$hash_out) {
+                    $result{$k} = $hash_out->{$k};
+                }
+                next;
+            }
+            if ($key =~ m{ \A = (-?) \s* (\w+) \s+ (.*) }xms) {
+                # assignment (always interpolates)
+                my $new_key = $2;
+                my $new_value = Positron::Expression::evaluate($3, $env);
+                # We change env here!
+                my $new_env = Positron::Environment->new({}, { parent => $env });
+                $new_env->set($new_key, $new_value); # Handles '_' on either side
+                my ($hash_out, undef) = $self->_process($value, $new_env);
                 # interpolate
                 foreach my $k (keys %$hash_out) {
                     $result{$k} = $hash_out->{$k};
