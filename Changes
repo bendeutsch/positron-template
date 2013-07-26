@@ -1,5 +1,8 @@
 {{$NEXT}}
 
+  - Added assignment construct '=' to DataTemplate.
+  - Added escaping constructs '~' and '{~}' to DataTemplate.
+
 v0.0.4    2013-07-25 18:19:55 UTC
 
   - Positron::Environment can take arbitrary scalar data

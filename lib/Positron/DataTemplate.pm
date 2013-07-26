@@ -168,7 +168,8 @@ sub _process_text {
             return (Positron::Expression::evaluate($expr, $env), $interpolate);
         }
     } elsif ($template =~ m{ \A \$ (.*) \z}xms) {
-        return ("" . Positron::Expression::evaluate($1, $env), 0);
+        my $value = Positron::Expression::evaluate($1, $env) // '';
+        return ("$value", 0);
     } elsif ($template =~ m{ \A \x23 (\+?) }xms) {
         return ('', ($1 ? 0 : 1));
     } elsif ($template =~ m{ \A = \s* (\w+) \s+ (.*) }xms) {
@@ -224,6 +225,9 @@ sub _process_text {
         }{
             $2 ? '' : $1 . $4;
         }xmseg;
+        # At the very end: get rid of escaping tildes (one layer)
+        $template =~ s{ \A ~ }{}xms;
+        $template =~ s{ \{ ~ \} }{}xmsg;
         return ($template, 0);
     }
 }
