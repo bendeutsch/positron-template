@@ -105,6 +105,16 @@ give some examples.
   [1, '^len', "abcde", 2] + { len => \&CORE::length }
   -> [1, 5, 2]
 
+=head2 Assignment
+
+  [1, '= title object.name', 'My {$title} and {$count}' ]
+  + { object => { name => 'Name', count => 10 } }
+  -> [1, 'My Name and']
+
+=head2 Escaping other constructs
+
+  [ '~?cond', 'Talking about {{~}$templates}', '~.htaccess' ]
+  -> [ '?cond', 'Talking about {$templates}', '.htaccess' ]
 =cut
 
 use v5.10;
