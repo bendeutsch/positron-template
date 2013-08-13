@@ -239,6 +239,7 @@ will evaluate to a reference to an array with one element.
 
 sub evaluate {
     my ($string, $environment) = @_;
+    return undef unless defined $string;
     my $tree = parse($string);
     # Force scalar context, always
     return scalar(_evaluate($tree, $environment));
@@ -268,6 +269,8 @@ sub parse {
     if (not $parser) {
         $parser = Parse::RecDescent->new($grammar);
     }
+    # We lazy-build the parser in any case, only then do we "fast abort"
+    return undef unless defined $string;
     return $parser->expression($string);
 }
 

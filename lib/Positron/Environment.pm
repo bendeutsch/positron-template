@@ -122,6 +122,7 @@ sub get {
         return $self->{'data'}->{$key};
     } elsif (ref($self->{'data'}) eq 'ARRAY') {
         # What about parents with array refs?
+        no warnings 'numeric'; # all else is 0, that's ok.
         return $self->{'data'}->[int($key)];
     # N.B.: other scalars (non-refs, objects) never perform subqueries, always 'undef'
     } elsif ($self->{'parent'}) {
@@ -153,6 +154,7 @@ sub set {
     if ($key eq '_') {
         $self->{'data'} = $value;
     } elsif (ref($self->{'data'}) eq 'ARRAY') {
+        no warnings 'numeric';
         $self->{'data'}->[int($key)] = $value;
     } elsif (ref($self->{'data'}) eq 'HASH') {
         $self->{'data'}->{$key} = $value;
