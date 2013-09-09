@@ -271,6 +271,12 @@ sub parse {
     }
     # We lazy-build the parser in any case, only then do we "fast abort"
     return undef unless defined $string;
+    my $try_string = $string;
+    my $tree = $parser->expression(\$try_string);
+    if ($try_string =~ m{ \S }xms) {
+        $try_string =~ s{\A \s+ | \s+ \z}{}xmsg;
+        croak "Expression error: superfluous text $try_string in expression $string";
+    }
     return $parser->expression($string);
 }
 
