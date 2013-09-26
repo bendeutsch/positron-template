@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+  - Hardening of expressions: detect malformed input.
+
 v0.0.5    2013-09-09 18:33:53 UTC
 
   - Added assignment construct '=' to DataTemplate.

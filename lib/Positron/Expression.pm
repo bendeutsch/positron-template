@@ -187,6 +187,7 @@ use warnings;
 
 use Carp qw(croak);
 use Data::Dump qw(dump);
+use IO::String qw();
 use Positron::Environment;
 use Parse::RecDescent;
 use Scalar::Util qw(blessed);
@@ -195,7 +196,8 @@ use Scalar::Util qw(blessed);
 
 our $grammar = <<'EOT';
 # We start with our "boolean / ternary" expressions
-expression: <leftop: alternative /([:?])/ alternative> { @{$item[1]} == 1 ? $item[1]->[0] : ['expression', @{$item[1]}]; }
+expression: <leftop: alternative /([:?])/ alternative> /\z/ { @{$item[1]} == 1 ? $item[1]->[0] : ['expression', @{$item[1]}]; }
+| <error>
 alternative: '!' alternative { ['not', $item[2]]; } | operand
 
 # strings and numbers cannot start a dotted expression
@@ -205,11 +207,11 @@ operand: string | number | lterm ('.' rterm)(s) { ['dot', $item[1], @{$item[2]}]
 # The first part of a dotted expression is looked up in the environment.
 # The following parts are parts of whatever came before, and consequently looked
 # up there.
-lterm: '(' expression ')' { $item[2] } | funccall | identifier | '$' lterm { ['env', $item[2]] }
-rterm: '(' expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { $item[2] }
+lterm: '(' <commit> expression ')' { $item[2] } | funccall | identifier | '$' lterm { ['env', $item[2]] }
+rterm: '(' <commit> expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { $item[2] }
 
 # Strings currently cannot contain their delimiters, sorry.
-string: '"' /[^"]*/ '"' { $item[2] } | /\'/ /[^\']*/ /\'/ { $item[2] } | '`' /[^`]*/ '`' { $item[2] }
+string: '"' <commit> /[^"]*/ '"' { $item[2] } | /\'/ <commit> /[^\']*/ /\'/ { $item[2] } | '`' <commit> /[^`]*/ '`' { $item[2] } | <error?><reject>
 
 identifier: /[a-zA-Z_]\w*/ {['env', $item[1]]}
 key: /[a-zA-Z_]\w*/ { $item[1] }
@@ -231,7 +233,7 @@ our $parser = undef;
     my $value = Positron::Expression::evaluate($string, $environment);
 
 Evaluates the expression in C<$string> with the L<Positron::Environment> C<$env>.
-The result is always a scalar value, which may be a true scalar or a reference.
+The result is always a scalar value, which may be a plain scalar or a reference.
 For example, the expression C<x> with the environment C<< { x => [1] } >>
 will evaluate to a reference to an array with one element.
 
@@ -239,7 +241,7 @@ will evaluate to a reference to an array with one element.
 
 sub evaluate {
     my ($string, $environment) = @_;
-    return undef unless defined $string;
+    return undef unless defined $string and $string ne '';
     my $tree = parse($string);
     # Force scalar context, always
     return scalar(_evaluate($tree, $environment));
@@ -270,9 +272,17 @@ sub parse {
         $parser = Parse::RecDescent->new($grammar);
     }
     # We lazy-build the parser in any case, only then do we "fast abort"
-    return undef unless defined $string;
+    return undef unless defined $string and $string ne '';
     my $try_string = $string;
+    my $error_string = '';
+    #local *STDERR = IO::String->new($error_string);
+    local *STDERR;
+    open(STDERR, '>', \$error_string);
     my $tree = $parser->expression(\$try_string);
+    #croak "Error string: $error_string";
+    if ($error_string) {
+        croak "Oh no: $error_string";
+    }
     if ($try_string =~ m{ \S }xms) {
         $try_string =~ s{\A \s+ | \s+ \z}{}xmsg;
         croak "Expression error: superfluous text $try_string in expression $string";
