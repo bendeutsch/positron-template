@@ -264,7 +264,7 @@ See also C<reduce> to continue the evaluation.
 
 =cut
 
-sub parse {
+sub parse_recd {
     my ($string) = @_;
 
     # lazy build, why not
@@ -289,6 +289,184 @@ sub parse {
     }
     return $parser->expression($string);
 }
+
+sub parse {
+    my ($string) = @_;
+    return undef unless defined $string;
+    $string =~ s{\A\s+}{}xms; $string =~ s{\s+\z}{}xms;
+    return undef unless $string ne '';
+    my $expression = expression($string);
+    if ($string =~ m{ \G \s* \S}xmsgc) {
+        pos $string = pos($string) - 1;
+        croak "Syntax error: superfluous text " . _critisize($string);
+    }
+    return $expression;
+}
+
+sub expression {
+    my $alternative = alternative($_[0]);
+    my @others = ();
+    #$_[0] =~ m{\G\s*}gc; # fast forward 
+    while ($_[0] =~ m{\G \s* ([?:]) \s* }xmsgc) {
+        # another alternative
+        push @others, ($1, alternative($_[0])); 
+    }
+    return (@others) ? ['expression', $alternative, @others] : $alternative;
+}
+
+sub alternative {
+    if ($_[0] =~ m{\G \s* (!) \s*}xmsgc) {
+        return ['not', alternative($_[0])];
+    } else {
+        return operand($_[0]);
+    }
+}
+
+sub operand {
+    if ($_[0] =~ m{\G \s* (["'`])}xmsgc) {
+        pos $_[0] = pos($_[0]) - 1;
+        return string($_[0], $1);
+    } elsif ($_[0] =~ m{\G \s* [\d+-]}xmsgc) {
+        pos $_[0] = pos($_[0]) - 1;
+        return number($_[0]);
+    } else {
+        my $lterm = lterm($_[0]);
+        my @rterms = ();
+        while ($_[0] =~ m{\G \s* \. \s*}xmsgc) {
+            push @rterms, rterm($_[0]);
+        }
+        return @rterms ? ['dot', $lterm, @rterms] : $lterm;
+    }
+}
+
+sub lterm {
+    if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
+        my $expression = expression($_[0]);
+        if ($_[0] =~ m{ \G \s* \) \s* }xmsgc) {
+            return $expression;
+        } else {
+            croak q{Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
+        }
+    } elsif ($_[0] =~ m{ \G \s* \$ }xmsgc) {
+        my $lterm = lterm($_[0]);
+        return ['env', $lterm];
+    } else {
+        # funccall or plain identifier
+        my $identifier = identifier($_[0]);
+        if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
+            # argument list, go for funccall
+            #$identifier = $identifier->[1]; # just the name
+            my @arguments = ();
+            while ($_[0] =~ m{ \G (?= [^)] ) }xmsgc) {
+                if (@arguments) {
+                    # need a ',' before the next argument if we have some already.
+                    # trailing ',' are a-ok.
+                    $_[0] =~ m{ \s* , [[:space:],]* }xmsgc
+                    or croak q{Need a comma in argument list } . _critisize($_[0]);
+                }
+                push @arguments, expression($_[0]);
+            }
+            # trailing ',' are a-ok.
+            if ($_[0] =~ m{ \G [[:space:],]* \) \s* }xmsgc) {
+                return ['funccall', $identifier, @arguments];
+            } else {
+                croak q{Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
+            }
+        } else {
+            return $identifier;
+        }
+    }
+}
+
+sub rterm {
+    # second verse: same as the first!
+    if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
+        my $expression = expression($_[0]);
+        if ($_[0] =~ m{ \G \s* \) \s* }xmsgc) {
+            return $expression;
+        } else {
+            croak q{Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
+        }
+    } elsif ($_[0] =~ m{ \G \s* \$ }xmsgc) {
+        # yes, inside an rterm, it's an lterm, but as a key
+        my $lterm = lterm($_[0]);
+        return $lterm;
+    } elsif ($_[0] =~ m{\G \s* (?=["'`])}xmsgc) {
+        return string($_[0], $1);
+    } elsif ($_[0] =~ m{\G \s* (?=[\d+-])}xmsgc) {
+        return integer($_[0]);
+    } else {
+        # methcall or plain key
+        my $identifier = identifier($_[0]);
+        $identifier = $identifier->[1]; # just the name, in any case
+        if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
+            # argument list, go for methcall
+            my @arguments = ();
+            while ($_[0] =~ m{ \G (?= [^)] ) }xmsgc) {
+                if (@arguments) {
+                    # need a ',' before the next argument if we have some already.
+                    # trailing ',' are a-ok.
+                    $_[0] =~ m{ \s* , [[:space:],]* }xmsgc
+                    or croak q{Need a comma in argument list } . _critisize($_[0]);
+                }
+                push @arguments, expression($_[0]);
+            }
+            # trailing ',' are a-ok.
+            if ($_[0] =~ m{ \G [[:space:],]* \) \s* }xmsgc) {
+                return ['methcall', $identifier, @arguments];
+            } else {
+                croak q{Unbalanced parentheses: missing a ')' near } . _critisize($_[0]);
+            }
+        } else {
+            return $identifier;
+        }
+    }
+}
+
+sub string {
+    my ($contents, $delim);
+    $delim = $_[1];
+    given ($delim) {
+        when (q{"}) { $_[0] =~ m{ \G \s* " ([^"]*) " \s* }xmsgc and $contents = $1; }
+        when (q{'}) { $_[0] =~ m{ \G \s* ' ([^']*) ' \s* }xmsgc and $contents = $1; }
+        when (q{`}) { $_[0] =~ m{ \G \s* ` ([^`]*) ` \s* }xmsgc and $contents = $1; }
+        default { die "string called with invalid delimiter $delim"; }
+    }
+    if (defined $contents) {
+        return $contents;
+    } else {
+        croak qq{Missing string delimiter '$delim' } . _critisize($_[0]);
+    }
+}
+
+sub identifier {
+    if ($_[0] =~ m{ \G ( [[:alpha:]_] [[:alnum:]_]*) \s* }xmsgc) {
+        return [ 'env', $1 ];
+    } else {
+        croak q{Invalid identifier: } . _critisize($_[0]);
+    }
+}
+
+sub number {
+    if ($_[0] =~ m{ \G \s* ([+-]? \d+ (?:\.\d+)? ) \s* }xmscg) {
+        return $1;
+    } else {
+        croak q{Invalid number: } . _critisize($_[0]);
+    }
+}
+
+sub integer {
+    if ($_[0] =~ m{ \G \s* ([+-]? \d+ ) \s* }xmscg) {
+        return $1;
+    } else {
+        croak q{Invalid integer: } . _critisize($_[0]);
+    }
+}
+
+sub _critisize {
+    return qq{near '} . substr($_[0], pos($_[0]) || 0, 10) . q{' in '} . $_[0] . q{'};
+}
+
 
 =head2 reduce
 

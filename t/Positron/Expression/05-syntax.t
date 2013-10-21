@@ -14,6 +14,16 @@ BEGIN {
     require_ok('Positron::Expression');
 }
 
+lives_and{
+    is(Positron::Expression::string(q{"hello"}, q{"}), q{hello});
+} "Complete string";
+throws_ok {
+    Positron::Expression::string(q{"hello}, q{"});
+} qr{Missing string delimiter}, "Incomplete string (beginning)t";
+throws_ok {
+    Positron::Expression::string(q{hello"}, q{"});
+} qr{Missing string delimiter}, "Incomplete string (end)";
+
 dies_ok { Positron::Expression::parse('0 blargh'); } "Superfluous text"; diag $@;
 
 dies_ok { Positron::Expression::parse('?"'); } "Nonsense"; diag $@;
