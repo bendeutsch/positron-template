@@ -309,7 +309,8 @@ sub expression {
     #$_[0] =~ m{\G\s*}gc; # fast forward 
     while ($_[0] =~ m{\G \s* ([?:]) \s* }xmsgc) {
         # another alternative
-        push @others, ($1, alternative($_[0])); 
+        my $operator = $1;
+        push @others, ($operator, alternative($_[0])); 
     }
     return (@others) ? ['expression', $alternative, @others] : $alternative;
 }
