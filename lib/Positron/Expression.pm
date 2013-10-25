@@ -196,8 +196,7 @@ use Scalar::Util qw(blessed);
 
 our $grammar = <<'EOT';
 # We start with our "boolean / ternary" expressions
-expression: <leftop: alternative /([:?])/ alternative> /\z/ { @{$item[1]} == 1 ? $item[1]->[0] : ['expression', @{$item[1]}]; }
-| <error>
+expression: <leftop: alternative /([:?])/ alternative> { @{$item[1]} == 1 ? $item[1]->[0] : ['expression', @{$item[1]}]; }
 alternative: '!' alternative { ['not', $item[2]]; } | operand
 
 # strings and numbers cannot start a dotted expression
@@ -207,11 +206,11 @@ operand: string | number | lterm ('.' rterm)(s) { ['dot', $item[1], @{$item[2]}]
 # The first part of a dotted expression is looked up in the environment.
 # The following parts are parts of whatever came before, and consequently looked
 # up there.
-lterm: '(' <commit> expression ')' { $item[2] } | funccall | identifier | '$' lterm { ['env', $item[2]] }
-rterm: '(' <commit> expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { $item[2] }
+lterm: '(' expression ')' { $item[2] } | funccall | identifier | '$' lterm { ['env', $item[2]] }
+rterm: '(' expression ')' { $item[2] } | methcall | key | string | integer | '$' lterm { $item[2] }
 
 # Strings currently cannot contain their delimiters, sorry.
-string: '"' <commit> /[^"]*/ '"' { $item[2] } | /\'/ <commit> /[^\']*/ /\'/ { $item[2] } | '`' <commit> /[^`]*/ '`' { $item[2] } | <error?><reject>
+string: '"' /[^"]*/ '"' { $item[2] } | /\'/ /[^\']*/ /\'/ { $item[2] } | '`' /[^`]*/ '`' { $item[2] }
 
 identifier: /[a-zA-Z_]\w*/ {['env', $item[1]]}
 key: /[a-zA-Z_]\w*/ { $item[1] }
