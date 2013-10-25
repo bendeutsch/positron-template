@@ -23,8 +23,12 @@ The result is a scalar value.
 
 The grammar is basically built up of the following rules.
 The exact grammar is available as a package variable
-C<$Positron::Expression::grammar>; this is a string which is fed to
+C<$Positron::Expression::grammar>; this is a string which could be fed to
 L<Parse::RecDescent> starting at the token C<expression>.
+
+However, the L<Parse::RecDescent> path has been replaced with a version
+using plain regular expressions, so the string is no longer the direct
+definition of the grammar.
 
 =head2 Whitespace
 
@@ -186,13 +190,14 @@ use strict;
 use warnings;
 
 use Carp qw(croak);
-use Data::Dump qw(dump);
+use Data::Dump qw(pp);
 use IO::String qw();
 use Positron::Environment;
-use Parse::RecDescent;
+#use Parse::RecDescent;  # obsolete, see below
 use Scalar::Util qw(blessed);
 
-# The following grammer creates a "parse tree" 
+# The following grammar is used by Parse::RecDescent to create a "parse tree".
+# Note that the Parse::RecDescent path is currently obsolete.
 
 our $grammar = <<'EOT';
 # We start with our "boolean / ternary" expressions
@@ -223,6 +228,7 @@ funccall: identifier '(' expression(s? /\s*,\s*/) ')' { ['funccall', $item[1], @
 methcall: key '(' expression(s? /\s*,\s*/) ')' { ['methcall', $item[1], @{$item[3]}] }
 EOT
 
+# A Parse::RecDescent object; currently obsolete 
 our $parser = undef;
 
 =head1 FUNCTIONS
@@ -263,11 +269,13 @@ See also C<reduce> to continue the evaluation.
 
 =cut
 
+# Obsolete interface based on Parse::RecDescent
 sub parse_recd {
     my ($string) = @_;
 
     # lazy build, why not
     if (not $parser) {
+        require Parse::RecDescent;
         $parser = Parse::RecDescent->new($grammar);
     }
     # We lazy-build the parser in any case, only then do we "fast abort"
@@ -289,6 +297,7 @@ sub parse_recd {
     return $parser->expression($string);
 }
 
+# current home-grown version
 sub parse {
     my ($string) = @_;
     return undef unless defined $string;
@@ -302,6 +311,7 @@ sub parse {
     return $expression;
 }
 
+# Helper for 'parse'
 sub expression {
     my $alternative = alternative($_[0]);
     my @others = ();
@@ -314,6 +324,7 @@ sub expression {
     return (@others) ? ['expression', $alternative, @others] : $alternative;
 }
 
+# Helper for 'parse'
 sub alternative {
     if ($_[0] =~ m{\G \s* (!) \s*}xmsgc) {
         return ['not', alternative($_[0])];
@@ -322,6 +333,7 @@ sub alternative {
     }
 }
 
+# Helper for 'parse'
 sub operand {
     if ($_[0] =~ m{\G \s* (["'`])}xmsgc) {
         pos $_[0] = pos($_[0]) - 1;
@@ -339,6 +351,7 @@ sub operand {
     }
 }
 
+# Helper for 'parse'
 sub lterm {
     if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
         my $expression = expression($_[0]);
@@ -378,6 +391,7 @@ sub lterm {
     }
 }
 
+# Helper for 'parse'
 sub rterm {
     # second verse: same as the first!
     if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
@@ -423,6 +437,7 @@ sub rterm {
     }
 }
 
+# Helper for 'parse'
 sub string {
     my ($contents, $delim);
     $delim = $_[1];
@@ -439,6 +454,7 @@ sub string {
     }
 }
 
+# Helper for 'parse'
 sub identifier {
     if ($_[0] =~ m{ \G ( [[:alpha:]_] [[:alnum:]_]*) \s* }xmsgc) {
         return [ 'env', $1 ];
@@ -447,6 +463,7 @@ sub identifier {
     }
 }
 
+# Helper for 'parse'
 sub number {
     if ($_[0] =~ m{ \G \s* ([+-]? \d+ (?:\.\d+)? ) \s* }xmscg) {
         return $1;
@@ -455,6 +472,7 @@ sub number {
     }
 }
 
+# Helper for 'parse'
 sub integer {
     if ($_[0] =~ m{ \G \s* ([+-]? \d+ ) \s* }xmscg) {
         return $1;
@@ -463,6 +481,9 @@ sub integer {
     }
 }
 
+# Helper function: report errors "from the point of parsing"
+# The entire expression is assumed to be short, and one of many, so the entire
+# expression is included in the diagnostics to help you find it.
 sub _critisize {
     return qq{near '} . substr($_[0], pos($_[0]) || 0, 10) . q{' in '} . $_[0] . q{'};
 }
@@ -500,7 +521,7 @@ empty arrays or hashes, and a true value for non-empty ones.
 Other values, such as plain scalars, blessed references, subroutine references or C<undef>,
 are returned verbatim.
 Their truth values are therefore up to Perl (a reference blessed into a package with an
-overloaded C<bool> method may still return false, for example.
+overloaded C<bool> method may still return false, for example).
 
 =cut
 
@@ -519,6 +540,7 @@ sub true {
     }
 }
 
+# Recursive helper version of _evaluate
 sub _evaluate {
     my ($tree, $env, $obj) = @_;
     if (not ref($tree)) {
