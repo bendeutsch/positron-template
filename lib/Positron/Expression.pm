@@ -302,14 +302,27 @@ sub parse {
     my ($string) = @_;
     return undef unless defined $string;
     $string =~ s{\A\s+}{}xms; $string =~ s{\s+\z}{}xms;
-    return undef unless $string ne '';
+    return undef if $string eq '';
     my $expression = expression($string);
-    if ($string =~ m{ \G \s* \S}xmsgc) {
-        pos $string = pos($string) - 1;
+    if ($string =~ m{ \G \s* \S}xms) {
         croak "Syntax error: superfluous text " . _critisize($string);
     }
     return $expression;
 }
+
+# Starting characters:
+# identifier: ID_Start
+# key: ID_Start
+# number: + - \d
+# integer: + - \d
+# funccall: ID_Start
+# key: ID_Start
+# string: " ' `
+# lterm: ( ID_Start $
+# rterm: ( ID_Start $ " ' ` \d
+# operand: " ' ` \d ( ID_Start $
+# alternative: ! " ' ` \d ( ID_Start $
+# expression: ! " ' ` \d ( ID_Start $
 
 # Helper for 'parse'
 sub expression {
@@ -335,19 +348,19 @@ sub alternative {
 
 # Helper for 'parse'
 sub operand {
-    if ($_[0] =~ m{\G \s* (["'`])}xmsgc) {
-        pos $_[0] = pos($_[0]) - 1;
+    if ($_[0] =~ m{\G \s* (["'`])}xms) {
         return string($_[0], $1);
-    } elsif ($_[0] =~ m{\G \s* [\d+-]}xmsgc) {
-        pos $_[0] = pos($_[0]) - 1;
+    } elsif ($_[0] =~ m{\G \s* [\d+-]}xms) {
         return number($_[0]);
-    } else {
+    } elsif ($_[0] =~ m{\G \s* [([:alpha:]_\$]}xms) {
         my $lterm = lterm($_[0]);
         my @rterms = ();
         while ($_[0] =~ m{\G \s* \. \s*}xmsgc) {
             push @rterms, rterm($_[0]);
         }
         return @rterms ? ['dot', $lterm, @rterms] : $lterm;
+    } else {
+        croak q{Operand expected } . _critisize($_[0]);
     }
 }
 
@@ -363,7 +376,7 @@ sub lterm {
     } elsif ($_[0] =~ m{ \G \s* \$ }xmsgc) {
         my $lterm = lterm($_[0]);
         return ['env', $lterm];
-    } else {
+    } elsif ($_[0] =~ m{\G \s* [[:alpha:]_] }xms) {
         # funccall or plain identifier
         my $identifier = identifier($_[0]);
         if ($_[0] =~ m{ \G \s* \( \s* }xmsgc) {
@@ -388,6 +401,8 @@ sub lterm {
         } else {
             return $identifier;
         }
+    } else {
+        croak q{Term expected } . _critisize($_[0]);
     }
 }
 
@@ -409,7 +424,7 @@ sub rterm {
         return string($_[0], $1);
     } elsif ($_[0] =~ m{\G \s* (?=[\d+-])}xmsgc) {
         return integer($_[0]);
-    } else {
+    } elsif ($_[0] =~ m{\G \s* [[:alpha:]_] }xms) {
         # methcall or plain key
         my $identifier = identifier($_[0]);
         $identifier = $identifier->[1]; # just the name, in any case
@@ -434,6 +449,8 @@ sub rterm {
         } else {
             return $identifier;
         }
+    } else {
+        croak q{Term expected } . _critisize($_[0]);
     }
 }
 
