@@ -305,7 +305,7 @@ sub parse {
     return undef if $string eq '';
     my $expression = expression($string);
     if ($string =~ m{ \G \s* \S}xms) {
-        croak "Syntax error: superfluous text " . _critisize($string);
+        croak "Syntax error: Superfluous text " . _critisize($string);
     }
     return $expression;
 }
@@ -360,7 +360,7 @@ sub operand {
         }
         return @rterms ? ['dot', $lterm, @rterms] : $lterm;
     } else {
-        croak q{Operand expected } . _critisize($_[0]);
+        croak q{Syntax error: Operand expected } . _critisize($_[0]);
     }
 }
 
@@ -371,7 +371,7 @@ sub lterm {
         if ($_[0] =~ m{ \G \s* \) \s* }xmsgc) {
             return $expression;
         } else {
-            croak q{Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
+            croak q{Syntax error: Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
         }
     } elsif ($_[0] =~ m{ \G \s* \$ }xmsgc) {
         my $lterm = lterm($_[0]);
@@ -388,7 +388,7 @@ sub lterm {
                     # need a ',' before the next argument if we have some already.
                     # trailing ',' are a-ok.
                     $_[0] =~ m{ \s* , [[:space:],]* }xmsgc
-                    or croak q{Need a comma in argument list } . _critisize($_[0]);
+                    or croak q{Syntax error: Need commas in argument list } . _critisize($_[0]);
                 }
                 push @arguments, expression($_[0]);
             }
@@ -396,13 +396,13 @@ sub lterm {
             if ($_[0] =~ m{ \G [[:space:],]* \) \s* }xmsgc) {
                 return ['funccall', $identifier, @arguments];
             } else {
-                croak q{Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
+                croak q{Syntax error: Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
             }
         } else {
             return $identifier;
         }
     } else {
-        croak q{Term expected } . _critisize($_[0]);
+        croak q{Syntax error: Term expected } . _critisize($_[0]);
     }
 }
 
@@ -414,7 +414,7 @@ sub rterm {
         if ($_[0] =~ m{ \G \s* \) \s* }xmsgc) {
             return $expression;
         } else {
-            croak q{Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
+            croak q{Syntax error: Unbalanced parentheses: missing a ')' } . _critisize($_[0]);
         }
     } elsif ($_[0] =~ m{ \G \s* \$ }xmsgc) {
         # yes, inside an rterm, it's an lterm, but as a key
@@ -436,7 +436,7 @@ sub rterm {
                     # need a ',' before the next argument if we have some already.
                     # trailing ',' are a-ok.
                     $_[0] =~ m{ \s* , [[:space:],]* }xmsgc
-                    or croak q{Need a comma in argument list } . _critisize($_[0]);
+                    or croak q{Syntax error: Need commas in argument list } . _critisize($_[0]);
                 }
                 push @arguments, expression($_[0]);
             }
@@ -444,13 +444,14 @@ sub rterm {
             if ($_[0] =~ m{ \G [[:space:],]* \) \s* }xmsgc) {
                 return ['methcall', $identifier, @arguments];
             } else {
-                croak q{Unbalanced parentheses: missing a ')' near } . _critisize($_[0]);
+                croak q{Syntax error: Unbalanced parentheses: missing a ')' near } . _critisize($_[0]);
             }
         } else {
             return $identifier;
         }
     } else {
-        croak q{Term expected } . _critisize($_[0]);
+        # this can probably not be reached
+        croak q{Syntax error: Term expected } . _critisize($_[0]);
     }
 }
 
@@ -462,12 +463,12 @@ sub string {
         when (q{"}) { $_[0] =~ m{ \G \s* " ([^"]*) " \s* }xmsgc and $contents = $1; }
         when (q{'}) { $_[0] =~ m{ \G \s* ' ([^']*) ' \s* }xmsgc and $contents = $1; }
         when (q{`}) { $_[0] =~ m{ \G \s* ` ([^`]*) ` \s* }xmsgc and $contents = $1; }
-        default { die "string called with invalid delimiter $delim"; }
+        default { die "Internal error: string called with invalid delimiter $delim"; }
     }
     if (defined $contents) {
         return $contents;
     } else {
-        croak qq{Missing string delimiter '$delim' } . _critisize($_[0]);
+        croak qq{Syntax error: Missing string delimiter '$delim' } . _critisize($_[0]);
     }
 }
 
@@ -476,16 +477,18 @@ sub identifier {
     if ($_[0] =~ m{ \G ( [[:alpha:]_] [[:alnum:]_]*) \s* }xmsgc) {
         return [ 'env', $1 ];
     } else {
-        croak q{Invalid identifier: } . _critisize($_[0]);
+        # this can probably never be reached
+        croak q{Syntax error: Invalid identifier } . _critisize($_[0]);
     }
 }
 
 # Helper for 'parse'
 sub number {
+    # TODO: can we get this to commit after the period?
     if ($_[0] =~ m{ \G \s* ([+-]? \d+ (?:\.\d+)? ) \s* }xmscg) {
         return $1;
     } else {
-        croak q{Invalid number: } . _critisize($_[0]);
+        croak q{Syntax error: Invalid number } . _critisize($_[0]);
     }
 }
 
@@ -494,7 +497,7 @@ sub integer {
     if ($_[0] =~ m{ \G \s* ([+-]? \d+ ) \s* }xmscg) {
         return $1;
     } else {
-        croak q{Invalid integer: } . _critisize($_[0]);
+        croak q{Syntax error: Invalid integer } . _critisize($_[0]);
     }
 }
 
