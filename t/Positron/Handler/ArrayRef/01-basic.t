@@ -7,6 +7,7 @@ use Test::More;
 #use Test::Exception;
 
 use Storable;
+use File::Slurp qw();
 
 BEGIN {
     use_ok('Positron::Handler::ArrayRef');
@@ -116,6 +117,21 @@ my $file = {'nodes' => $dom};
 store($file, 't/Positron/Handler/ArrayRef/test.store');
 my $new_dom = $handler->parse_file('t/Positron/Handler/ArrayRef/test.store');
 is_deeply($dom, $new_dom, "Parsed a file");
+
+# JSON (try)
+SKIP: {
+    eval 'require JSON' or skip 1, 'Module "JSON" not found';
+    $dom = 
+        [ 'a', { href => "/", title => "The title", alt => "", },
+            [ 'b', undef, [ " Now: " ] ],
+            "next page",
+            ['c', {}],
+        ];
+    my $file = JSON->new->ascii->allow_nonref->encode($dom);
+    File::Slurp::write_file('t/Positron/Handler/ArrayRef/test.json', $file);
+    my $new_dom = $handler->parse_file('t/Positron/Handler/ArrayRef/test.json');
+    is_deeply($dom, $new_dom, "Parsed JSON file");
+}
 
 done_testing();
 

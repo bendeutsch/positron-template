@@ -1,5 +1,31 @@
 package Positron::Handler::ArrayRef;
+# VERSION
 
+=head1 NAME
+
+Positron::Handler::ArrayRef - a DOM interface for ArrayRefs
+
+=head1 SYNOPSIS
+
+  my $engine = Positron::Template->new();
+
+  my $template = [
+    'a',
+    { href => "/"},
+    [ 'b', undef, [ "Now: " ] ],
+    "next page",
+  ];
+  my $data   = { foo => 'bar', baz => [ 1, 2, 3 ] };
+  my $result = $engine->parse($template, $data); 
+
+=head1 DESCRIPTION
+
+This module allows C<Positron::Template> to work with a simple DOM representation:
+ArrayRefs.
+
+=cut
+
+use v5.10;
 use strict;
 use warnings;
 
@@ -83,8 +109,17 @@ sub parse_file {
     # Needs more info on directories!
     # Storable: { nodes = [ ... ] }
     my ($self, $filename) = @_;
-    my $wrapper = retrieve($filename);
-    return $wrapper->{'nodes'};
+    # TODO: select deserializer based on filename (Storable / JSON / eval?)
+    if ($filename =~ m{ \. (json|js) $ }xms) {
+        require JSON; # should use JSON::XS if available
+        require File::Slurp;
+        my $json = File::Slurp::read_file($filename);
+        return JSON->new->utf8->allow_nonref->decode($json);
+    } else {
+        # Storable
+        my $wrapper = retrieve($filename);
+        return $wrapper->{'nodes'};
+    }
 }
 
 1;
