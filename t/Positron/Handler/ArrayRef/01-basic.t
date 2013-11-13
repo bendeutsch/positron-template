@@ -19,7 +19,7 @@ my $dom;
 
 $dom = 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
     ];
 
@@ -42,7 +42,7 @@ ok(!defined($handler->get_attribute($dom->[3], 'style')),"Attribute of Text give
 
 $dom = 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
     ];
 
@@ -60,7 +60,7 @@ is_deeply($dom->[1], {href=>"/",  title=>"The title", alt=>""}, "Removing an att
 
 $dom = 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
     ];
 
@@ -71,14 +71,14 @@ is_deeply([$handler->list_attributes($dom->[3])], [], "Text has no attributes");
 # push_contents
 $dom = 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
     ];
 
 $handler->push_contents($dom, "more text", ['c', {}]);
 is_deeply($dom, 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
         "more text",
         [ 'c', {} ],
@@ -94,12 +94,12 @@ is_deeply($dom->[4], "more text", "Text node unchanged");
 # list_contents
 $dom = 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
         ['c', {}],
     ];
 my @children = $handler->list_contents($dom);
-is_deeply([@children], [ ['b', undef, [ " Now: " ] ], "next page", ['c',{}]], "listed children");
+is_deeply([@children], [ ['b', undef, " Now: " ], "next page", ['c',{}]], "listed children");
 is("$dom->[2]", "$children[0]", "Identity of node child stays same");
 @children = $handler->list_contents($dom->[4]);
 ok(!@children, "Childless node has no contents");
@@ -109,11 +109,11 @@ ok(!@children, "Text node has no children");
 # parse_file
 $dom = 
     [ 'a', { href => "/", title => "The title", alt => "", },
-        [ 'b', undef, [ " Now: " ] ],
+        [ 'b', undef, " Now: " ],
         "next page",
         ['c', {}],
     ];
-my $file = {'nodes' => $dom};
+my $file = $dom;
 store($file, 't/Positron/Handler/ArrayRef/test.store');
 my $new_dom = $handler->parse_file('t/Positron/Handler/ArrayRef/test.store');
 is_deeply($dom, $new_dom, "Parsed a file");
@@ -123,7 +123,7 @@ SKIP: {
     eval 'require JSON' or skip 1, 'Module "JSON" not found';
     $dom = 
         [ 'a', { href => "/", title => "The title", alt => "", },
-            [ 'b', undef, [ " Now: " ] ],
+            [ 'b', undef, " Now: " ],
             "next page",
             ['c', {}],
         ];
