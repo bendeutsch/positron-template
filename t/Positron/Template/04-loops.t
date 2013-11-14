@@ -6,25 +6,27 @@ use warnings;
 use Test::More;
 use Test::Exception;
 
-use Positron;
+BEGIN {
+    require_ok('Positron::Template');
+}
 
 # Tests of the loop processing mechanism
 
-my $template = Positron->new();
+my $template = Positron::Template->new();
 is_deeply(
-    $template->parse(['b', {}, ['br', {}]], {}), 
+    $template->process(['b', {}, ['br', {}]], {}), 
     ['b', {}, ['br', {}]], 
     "Non-template structure works"
 );
 is_deeply(
-    $template->parse(
+    $template->process(
         ['b', { style => '{@loop}'}, ['br', {}]], 
         {'loop' => [{}, {}]}
     ),  ['b', {}, ['br', {}], ['br', {}]],
     "Loop works for simple dom"
 );
 is_deeply(
-    [$template->parse(
+    [$template->process(
         ['b', { style => '{@loop}'}, ['br', {}]], 
         {'loop' => []}
     )], [],
@@ -32,14 +34,14 @@ is_deeply(
 );
 
 is_deeply(
-    $template->parse(
+    $template->process(
         ['b', { style => '{@+loop}'}, ['br', {}]], 
         {'loop' => [{}, {}]}
     ),  ['b', {}, ['br', {}], ['br', {}]],
     "Loop works for simple dom (+ quant)"
 );
 is_deeply(
-    [$template->parse(
+    [$template->process(
         ['b', { style => '{@+loop}'}, ['br', {}]], 
         {'loop' => []}
     )], [['b', { }]],
@@ -47,14 +49,14 @@ is_deeply(
 );
 
 is_deeply(
-    [$template->parse(
+    [$template->process(
         ['b', { style => '{@-loop}'}, ['br', {}]], 
         {'loop' => [{}, {}]}
     )],  [['br', {}], ['br', {}]],
     "Loop works for simple dom (- quant)"
 );
 is_deeply(
-    [$template->parse(
+    [$template->process(
         ['b', { style => '{@-loop}'}, ['br', {}]], 
         {'loop' => []}
     )], [],
@@ -62,14 +64,14 @@ is_deeply(
 );
 
 is_deeply(
-    [$template->parse(
+    [$template->process(
         ['b', { style => '{@*loop}'}, ['br', {}]], 
         {'loop' => [{}, {}]}
     )],  [['b', {}, ['br', {}]], ['b', {}, ['br', {}]]],
     "Loop works for simple dom (* quant)"
 );
 is_deeply(
-    [$template->parse(
+    [$template->process(
         ['b', { style => '{@*loop}'}, ['br', {}]], 
         {'loop' => []}
     )], [],
@@ -79,7 +81,7 @@ is_deeply(
 # Environment chaining;
 
 is_deeply(
-    $template->parse(
+    $template->process(
         ['b', { id => '{$text}', style => '{@loop}'}, ['br', { id => '{$text}'}]], 
         {text => '0', 'loop' => [{ text => 'a' }, { text => 'b' }]}
     ),  ['b', { id => '0'}, ['br', { id => 'a'}], ['br', {id => 'b'}]],

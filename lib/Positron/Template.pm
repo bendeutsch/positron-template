@@ -1,13 +1,5 @@
-#!/usr/bin/perl
-
 package Positron::Template;
-
-use strict;
-use warnings;
-
-use Carp;
-use Positron::Environment;
-use Scalar::Util qw(blessed);
+# VERSION
 
 =head1 NAME
 
@@ -21,9 +13,17 @@ Positron::Template - a DOM based templating system
 
   my $dom    = create_dom_tree();
   my $data   = { foo => 'bar', baz => [ 1, 2, 3 ] };
-  my $result = $template->parse($dom, $data); 
+  my $result = $template->process($dom, $data); 
 
 =cut
+
+use v5.10;
+use strict;
+use warnings;
+
+use Carp;
+use Positron::Environment;
+use Scalar::Util qw(blessed);
 
 sub new {
     my ($class, %options) = @_;
@@ -32,7 +32,8 @@ sub new {
         closer => '}',
         dom => $options{dom} // undef,
         environment => Positron::Environment->new($options{env} // undef, { immutable => 1 }) // undef,
-        handler => _handler_for($options{dom}) // undef,
+        handler => $options{handler} || _handler_for($options{dom}) // undef,
+        include_paths => ['.'],
     };
     return bless ($self, $class);
 }
@@ -47,7 +48,13 @@ sub dom {
     }
 }
 
-sub parse {
+sub add_include_paths {
+    my ($self, @paths) = @_;
+    push @{$self->{'include_paths'}}, @paths;
+}
+
+
+sub process {
     my ($self, $dom, $data) = @_;
     # TODO: what if only one is passed? -> $self attributes
     # What if a HashRef is passed? -> new Environment object
@@ -63,14 +70,14 @@ sub parse {
     }
 
     if (not ref($dom)) {
-        return $self->_parse_text($dom, $data);
+        return $self->_process_text($dom, $data);
     }
     # Real DOM -> List of nodes
     
     my @nodes = ();
 
     $self->{'handler'} //= _handler_for($dom);
-    @nodes = $self->_parse_element($dom, $data);
+    @nodes = $self->_process_element($dom, $data);
     # DESTROY Handler?
 
     # Many people know that they will get a single node here.
@@ -78,7 +85,7 @@ sub parse {
     return (wantarray) ? @nodes : $nodes[0];
 }
 
-sub _parse_text {
+sub _process_text {
     my ($self, $string, $environment) = @_;
     my $string_finder = $self->_make_finder('$');
     my $last_changing_quant = undef;
@@ -149,12 +156,12 @@ sub _parse_text {
     return wantarray() ? ($string, $did_change, $last_changing_quant) : $string;
 }
 
-sub _parse_element {
+sub _process_element {
     my ($self, $node, $environment) = @_;
     my $handler = $self->{'handler'};
 
     if (not ref($node)) {
-        return $self->_parse_text($node, $environment);
+        return $self->_process_text($node, $environment);
     }
 
     # check for assignments
@@ -177,43 +184,43 @@ sub _parse_element {
     }
     # Have sigil, evaluate
     if ($sigil and $sigil eq '@') {
-        return $self->_parse_loop($node, $environment, $sigil, $quant, $tail);
+        return $self->_process_loop($node, $environment, $sigil, $quant, $tail);
     } elsif ($sigil and $sigil ~~ ['?', '!']) {
-        return $self->_parse_condition($node, $environment, $sigil, $quant, $tail);
+        return $self->_process_condition($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
-        $handler->push_contents( $new_node, map { $self->_parse_element($_, $environment) } $handler->list_contents($node));
-        $self->remove_structure_sigils($new_node);
+        $handler->push_contents( $new_node, map { $self->_process_element($_, $environment) } $handler->list_contents($node));
+        $self->_remove_structure_sigils($new_node);
         #$self->resolve_hash_attr($new_node, $environment);
-        $self->resolve_text_attr($new_node, $environment);
+        $self->_resolve_text_attr($new_node, $environment);
         return $new_node;
     }
     # String ones
     return $node;
 }
 
-sub _parse_loop {
+sub _process_loop {
 	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
 	my $handler = $self->{'handler'};
 	my $loop = $environment->get($tail) || [];
 	if (not @$loop) {
 		# keep if we should, else nothing
-		return ($quant eq '+') ? ($self->clone_and_resolve($node, $environment)) : ();
+		return ($quant eq '+') ? ($self->_clone_and_resolve($node, $environment)) : ();
 	}
 	# else have loop
 	my @contents;
 	foreach my $row (@$loop) {
 		my $env = Positron::Environment->new($row, {parent => $environment});
-		my @row_contents = map { $self->_parse_element( $_, $env) } $handler->list_contents($node);
-		push @contents, ($quant eq '*') ? ($self->clone_and_resolve($node, $env, @row_contents)) : @row_contents;
+		my @row_contents = map { $self->_process_element( $_, $env) } $handler->list_contents($node);
+		push @contents, ($quant eq '*') ? ($self->_clone_and_resolve($node, $env, @row_contents)) : @row_contents;
 	}
 	if ($quant ne '-' and $quant ne '*') { # remove this in any case
-		return ($self->clone_and_resolve($node, $environment, @contents));
+		return ($self->_clone_and_resolve($node, $environment, @contents));
 	}
 	return @contents;
 }
 
-sub _parse_condition {
+sub _process_condition {
 	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
 	my $handler = $self->{'handler'};
 	my $truth = undef;
@@ -248,9 +255,9 @@ sub _parse_condition {
 	my $keep = ($truth and $quant ne '-' or $quant eq '+');
 	my @contents = ();
 	if ($truth or $quant eq '*') {
-		@contents = map { $self->_parse_element($_, $environment) } $handler->list_contents($node);
+		@contents = map { $self->_process_element($_, $environment) } $handler->list_contents($node);
 	}
-	return ($keep) ? ($self->clone_and_resolve($node, $environment, @contents)) : @contents;
+	return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
 }
 
 sub _make_finder {
@@ -274,16 +281,19 @@ sub _make_finder {
 # HTML::Element
 # XML::LibXML
 # ArrayRef Handler
+# TODO: an extensible mechanism
 sub _handler_for {
     my ($dom) = @_;
     return unless ref($dom); # Text at most, needs no handler
     if (ref($dom) eq 'ARRAY') {
         require Positron::Handler::ArrayRef;
         return Positron::Handler::ArrayRef->new();
+    } elsif (my $package = blessed($dom)) {
+        eval "require Positron::Handler::$package; 1;" or croak "Could not load handler for $package";
     }
 }
 
-sub get_structure_sigil {
+sub _get_structure_sigil {
     my ($self, $node) = @_;
     my $handler = $self->{'handler'};
     my $structure_finder = $self->_make_finder('@?!/.:,;');
@@ -296,7 +306,7 @@ sub get_structure_sigil {
     return; # Has none
 }
 
-sub remove_structure_sigils {
+sub _remove_structure_sigils {
     my ($self, $node) = @_;
     my $handler = $self->{'handler'};
     # NOTE: we remove '=' here as well, even though it's not a structure sigil!
@@ -314,21 +324,21 @@ sub remove_structure_sigils {
     return; # void?
 }
 
-sub clone_and_resolve {
+sub _clone_and_resolve {
     my ($self, $node, $environment, @contents) = @_;
     my $handler = $self->{'handler'};
     my $clone = $handler->shallow_clone($node);
-    $self->remove_structure_sigils($clone);
-    $self->resolve_text_attr($clone, $environment);
+    $self->_remove_structure_sigils($clone);
+    $self->_resolve_text_attr($clone, $environment);
     $handler->push_contents($clone, @contents);
     return $clone;
 }
 
-sub resolve_text_attr {
+sub _resolve_text_attr {
     my ($self, $node, $environment) = @_;
     my $handler = $self->{'handler'};
     foreach my $attr ($handler->list_attributes($node)) {
-        my ($value, $did_change, $last_changing_quant) = $self->_parse_text($handler->get_attribute($node, $attr), $environment);
+        my ($value, $did_change, $last_changing_quant) = $self->_process_text($handler->get_attribute($node, $attr), $environment);
         if ($did_change) {
             if ($value eq '' and not $last_changing_quant eq '+') {
                 # We removed somethin from this attribute -> delete it if empty, unless the last sigil says otherwise

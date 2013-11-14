@@ -6,14 +6,16 @@ use warnings;
 use Test::More;
 use Test::Exception;
 
-use Positron;
+BEGIN {
+    require_ok('Positron::Template');
+}
 
 # Testing _make_finder despite the fact that it's "internal".
 # We need to make sure it works.
 
 my ($template, $finder);
 
-$template = Positron->new();
+$template = Positron::Template->new();
 dies_ok { $finder = $template->_make_finder(); } "Can't make a finder for nothing";
 
 # One for all sigils!
