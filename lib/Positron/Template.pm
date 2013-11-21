@@ -23,6 +23,7 @@ use warnings;
 
 use Carp;
 use Positron::Environment;
+use Positron::Expression;
 use Scalar::Util qw(blessed);
 
 sub new {
@@ -96,8 +97,8 @@ sub _process_text {
         $string_finder
         (\s*)
     }{
-        my ($ws_before, $sigil, $quant, $id, $ws_after) = ($1, $2, $3, $4, $5);
-        my $replacement = $environment->get($id) // '';
+        my ($ws_before, $sigil, $quant, $expr, $ws_after) = ($1, $2, $3, $4, $5);
+        my $replacement = Positron::Expression::evaluate($expr, $environment) // '';
         if ($quant eq '-') {
             $ws_before = '';
             $ws_after = '';
@@ -202,7 +203,7 @@ sub _process_element {
 sub _process_loop {
 	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
 	my $handler = $self->{'handler'};
-	my $loop = $environment->get($tail) || [];
+	my $loop = Positron::Expression::evaluate($tail, $environment) || [];
 	if (not @$loop) {
 		# keep if we should, else nothing
 		return ($quant eq '+') ? ($self->_clone_and_resolve($node, $environment)) : ();
@@ -223,34 +224,7 @@ sub _process_loop {
 sub _process_condition {
 	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
 	my $handler = $self->{'handler'};
-	my $truth = undef;
-	if ($tail =~ m{[\Q!|+\E]}xms) {
-		# Complex expression
-		$tail =~ s{\A\s+}{}xms; $tail =~ s{\s+\z}{}xms;
-		my @tokens = split( / \s* ( [\Q!|+()[]{}\E] ) \s* /xms, $tail);
-		my $tokenstring = "";
-		foreach my $token (@tokens) {
-			$tokenstring 
-				.= $token eq '+' ? '&&'
-				:  $token eq '|' ? '||'
-				:  $token eq '!' ? '!'
-				:  $token =~ m{ \A \s* \z}xms ? ''
-				:  $token =~ m{ [\(\[\{] }xms ? '('
-				:  $token =~ m{ [\)\]\}] }xms ? ')'
-				:  ($environment->get($token) ? '1' : '0') ;
-		}
-		# The tokenstring, by how we constructed it, can only contain 0, 1, boolean operators and parentheses.
-		#print "Token string: $tokenstring\n";
-		$truth = eval($tokenstring);
-		if ($@) {
-			# Most likely unbalanced parentheses or similar
-			# We need to complain!
-			croak "Error in conditional expression '$tail' ($@)";
-		}
-	} else {
-		# Simple expression	
-		$truth = $environment->get($tail);
-	}
+    my $truth = Positron::Expression::true(Positron::Expression::evaluate($tail, $environment));
 	if ($sigil eq '!') {$truth = not $truth;}
 	my $keep = ($truth and $quant ne '-' or $quant eq '+');
 	my @contents = ();

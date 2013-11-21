@@ -154,6 +154,30 @@ is_deeply(
     "!*: True condition removes parent"
 );
 
+# Complex expressions
+
+is_deeply(
+    $template->process(
+        ['b', { style => '{? map.list }' }, ['br', {}]],
+        {'map' => { list => [1, 2, 3]}}
+    ),  ['b', {}, ['br', {}]],
+    "Full list under hash lookup"
+);
+is_deeply(
+    [$template->process(
+        ['b', { style => '{? map.list }'}, ['br', {}]],
+        {'map' => { list => [] }}
+    )],  [],
+    "Empty list under hash lookup"
+);
+is_deeply(
+    [$template->process(
+        ['b', { style => '{? map.list }'}, ['br', {}]],
+        { 'map' => { none => 1 }},
+    )],  [],
+    "Missing map lookup removes tree"
+);
+
 done_testing;
 
 

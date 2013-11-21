@@ -87,6 +87,25 @@ is_deeply(
     ),  ['b', { id => '0'}, ['br', { id => 'a'}], ['br', {id => 'b'}]],
     "Environment chaining"
 );
+
+# Complex environments
+
+is_deeply(
+    $template->process(
+        ['b', { style => '{@ map.list }'}, ['br', {}]],
+        {'map' => { list => [1, 2], not_list => [] }},
+    ),  ['b', {}, ['br', {}], ['br', {}]],
+    "Loop lookup under hash"
+);
+
+is_deeply(
+    [$template->process(
+        ['b', { style => '{@ map.not_list }'}, ['br', {}]],
+        {'map' => { list => [1, 2], not_list => [] }},
+    )],  [],
+    "Empty loop lookup under hash"
+);
+
 done_testing;
 
 

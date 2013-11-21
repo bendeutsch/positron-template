@@ -17,6 +17,10 @@ is($template->process("Hello, World", {}), 'Hello, World', "Non-template string 
 is($template->process('Test {$abc}', {abc => 'one'}), 'Test one', "Template string works");
 is($template->process('Test {$def} {$abc}', {abc => 'one', def => 'two'}), 'Test two one', "Template string works");
 
+# more complex expressions
+is($template->process('Test {$ "direct" }', {}), 'Test direct', "Literal string in expression");
+is($template->process('Test {$ loop ? loop.0 : "nothing" }', { loop => ['first']}), 'Test first', "Ternary and loop in expression");
+
 # Quantifiers
 is($template->process("The \n \t{\$-old} \n line", {old => 'new'}), "Thenewline", "Minus quantifier");
 is($template->process("The \n \t{\$*old} \n line", {old => 'new'}), "The new line", "Star quantifier");
