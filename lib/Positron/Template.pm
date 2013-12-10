@@ -87,7 +87,7 @@ sub process {
 }
 
 sub _process_text {
-    my ($self, $string, $environment) = @_;
+    my ($self, $string, $environment, $with_quants) = @_;
     my $string_finder = $self->_make_finder('$');
     my $last_changing_quant = undef;
     my $did_change = undef;
@@ -154,7 +154,7 @@ sub _process_text {
         $did_change = 1;
         "$ws_before$ws_after";
     }xmseg;
-    return wantarray() ? ($string, $did_change, $last_changing_quant) : $string;
+    return $with_quants? ($string, $did_change, $last_changing_quant) : $string;
 }
 
 sub _process_element {
@@ -176,12 +176,7 @@ sub _process_element {
         if ( not $sigil and $value =~ m{ $structure_finder }xms) {
             ($sigil, $quant, $tail) = ($1, $2, $3);
         }
-        # Kill all structure sigils here
-        my $did_change = $value =~ s{ $structure_finder }{}xmsg;
-        # Remove attribute if newly empty
-        if($did_change and $value eq '') {
-            $handler->set_attribute($node, $attribute, undef); # delete
-        }
+        # Kill all structure sigils later: clone_and_resolve
     }
     # Have sigil, evaluate
     if ($sigil and $sigil eq '@') {
@@ -203,6 +198,7 @@ sub _process_element {
 sub _process_loop {
 	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
 	my $handler = $self->{'handler'};
+    # TODO: true() and coercion!
 	my $loop = Positron::Expression::evaluate($tail, $environment) || [];
 	if (not @$loop) {
 		# keep if we should, else nothing
@@ -312,7 +308,7 @@ sub _resolve_text_attr {
     my ($self, $node, $environment) = @_;
     my $handler = $self->{'handler'};
     foreach my $attr ($handler->list_attributes($node)) {
-        my ($value, $did_change, $last_changing_quant) = $self->_process_text($handler->get_attribute($node, $attr), $environment);
+        my ($value, $did_change, $last_changing_quant) = $self->_process_text($handler->get_attribute($node, $attr), $environment, 1);
         if ($did_change) {
             if ($value eq '' and not $last_changing_quant eq '+') {
                 # We removed somethin from this attribute -> delete it if empty, unless the last sigil says otherwise
