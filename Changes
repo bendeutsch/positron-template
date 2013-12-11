@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+v0.0.7    2013-12-11 20:51:42 UTC
+
   - Softening of expressions: graceful degrading to "undef"
     when the environment is underdefined
   - Syntax change: Expression 'hashref.func()' looks up the
