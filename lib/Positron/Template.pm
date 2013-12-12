@@ -169,16 +169,9 @@ sub _process_element {
     # create a modified environment if some are detected
     # proceed as normal
 
-    # TODO: Function _get_structure_sigil
-    my $structure_finder = $self->_make_finder('@?!|');
-    my ($sigil, $quant, $tail);
-    foreach my $attribute ($handler->list_attributes($node)) {
-        my $value = $handler->get_attribute($node, $attribute) || '';
-        if ( not $sigil and $value =~ m{ $structure_finder }xms) {
-            ($sigil, $quant, $tail) = ($1, $2, $3);
-        }
-        # Kill all structure sigils later: clone_and_resolve
-    }
+    # Evaluate structure sigils
+    my ($sigil, $quant, $tail) = $self->_get_structure_sigil($node);
+
     # Have sigil, evaluate
     if ($sigil and $sigil eq '@') {
         return $self->_process_loop($node, $environment, $sigil, $quant, $tail);
