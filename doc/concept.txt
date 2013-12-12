@@ -425,7 +425,11 @@ No, we can do better: 1) we usually want '' to trip the default case normally.
 Should we really be including other content "in any case"? Probably yes.
 -> 'like a true ?' it is.
 
+Sigil variants:
 
+to set:   |? |: |= 
+to query: |  |.
+-> go with '|:' and '|' for now
 
 
 Comments:

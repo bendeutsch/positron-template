@@ -169,7 +169,8 @@ sub _process_element {
     # create a modified environment if some are detected
     # proceed as normal
 
-    my $structure_finder = $self->_make_finder('@?!');
+    # TODO: Function _get_structure_sigil
+    my $structure_finder = $self->_make_finder('@?!|');
     my ($sigil, $quant, $tail);
     foreach my $attribute ($handler->list_attributes($node)) {
         my $value = $handler->get_attribute($node, $attribute) || '';
@@ -183,6 +184,8 @@ sub _process_element {
         return $self->_process_loop($node, $environment, $sigil, $quant, $tail);
     } elsif ($sigil and $sigil ~~ ['?', '!']) {
         return $self->_process_condition($node, $environment, $sigil, $quant, $tail);
+    } elsif ($sigil and $sigil eq '|') {
+        return $self->_process_switch($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
         $handler->push_contents( $new_node, map { $self->_process_element($_, $environment) } $handler->list_contents($node));
@@ -230,6 +233,44 @@ sub _process_condition {
 	return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
 }
 
+sub _process_switch {
+	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
+	my $handler = $self->{'handler'};
+    my $truth;
+    if ($tail =~ m{ \A : \s+ (.*) }xms) {
+        # "switch/given": setter
+        my $expr = $1;
+        my $goal = Positron::Expression::evaluate($expr, $environment) // ''; # always defined
+        $environment = Positron::Environment->new({'|' => $goal}, { parent => $environment, immutable => 0});
+        $truth = 1; # counts as a true condition for quantifiers
+    } else {
+        # "case/when": getter
+        my $goal = $environment->get('|');
+        if (defined ($goal)) {
+            # not consumed yet
+            my $test = Positron::Expression::evaluate($tail, $environment) // '';
+            # "truth" as in a condition
+            # To trigger the default, the $tail expression must be "empty", not the result!
+            $truth = ($goal eq $test or $tail =~ m{ \A \s* \z }xms);
+            if ($truth) {
+                # remember the match for defaults
+                $environment->set('|', undef); # Don't delete, because of parent
+            }
+        } else {
+            # already consumed, or never saw a '|:'
+            $truth = 0;
+        }
+    }
+    # Keep and contents (see condition)
+    my @contents = ();
+    my $keep = ($truth and $quant ne '-' or $quant eq '+');
+    if ($truth or $quant eq '*') {
+        @contents = map { $self->_process_element($_, $environment) } $handler->list_contents($node);
+    }
+    return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
+}
+
+
 sub _make_finder {
     my ($self, $sigils) = @_;
     # What to do on empty sigils? Need to find during development!
@@ -266,7 +307,7 @@ sub _handler_for {
 sub _get_structure_sigil {
     my ($self, $node) = @_;
     my $handler = $self->{'handler'};
-    my $structure_finder = $self->_make_finder('@?!/.:,;');
+    my $structure_finder = $self->_make_finder('@?!/.:,;|');
     foreach my $attr ($handler->list_attributes($node)) {
         my $value = $handler->get_attribute($node, $attr);
         if ($value =~ m{ $structure_finder }xms) {
@@ -280,7 +321,7 @@ sub _remove_structure_sigils {
     my ($self, $node) = @_;
     my $handler = $self->{'handler'};
     # NOTE: we remove '=' here as well, even though it's not a structure sigil!
-    my $structure_finder = $self->_make_finder('@?!/.:,;=');
+    my $structure_finder = $self->_make_finder('@?!/.:,;=|');
     foreach my $attr ($handler->list_attributes($node)) {
         my $value = $handler->get_attribute($node, $attr);
         my $did_change = ($value =~ s{ $structure_finder }{}xmsg);
