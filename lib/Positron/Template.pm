@@ -173,12 +173,15 @@ sub _process_element {
     my ($sigil, $quant, $tail) = $self->_get_structure_sigil($node);
 
     # Have sigil, evaluate
-    if ($sigil and $sigil eq '@') {
+    $sigil //= ''; # for 'eq'
+    if ($sigil eq '@') {
         return $self->_process_loop($node, $environment, $sigil, $quant, $tail);
-    } elsif ($sigil and $sigil ~~ ['?', '!']) {
+    } elsif ($sigil ~~ ['?', '!']) {
         return $self->_process_condition($node, $environment, $sigil, $quant, $tail);
-    } elsif ($sigil and $sigil eq '|') {
+    } elsif ($sigil eq '|') {
         return $self->_process_switch($node, $environment, $sigil, $quant, $tail);
+    } elsif ($sigil eq '/') {
+        return $self->_process_structure_comment($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
         $handler->push_contents( $new_node, map { $self->_process_element($_, $environment) } $handler->list_contents($node));
@@ -261,6 +264,23 @@ sub _process_switch {
         @contents = map { $self->_process_element($_, $environment) } $handler->list_contents($node);
     }
     return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
+}
+
+sub _process_structure_comment {
+	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
+	my $handler = $self->{'handler'};
+    # basically an always-false condition
+    # we could reuse our $keep and @contents code here, but this is probably
+    # more readable:
+    if ($quant eq '+') {
+        # keep node, not contents
+        return $self->_clone_and_resolve($node, $environment);
+    } elsif ($quant eq '*') {
+        # keep contents, not node
+        return map { $self->_process_element($_, $environment) } $handler->list_contents($node);
+    } else {
+        return; # nothing
+    }
 }
 
 
