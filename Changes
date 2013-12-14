@@ -1,5 +1,10 @@
 {{$NEXT}}
 
+  DataTemplate changes:
+  - Switch construct uses '|' instead of '?'
+  - "Conditional key" as syntactic sugar for conditional hash
+    slices
+
 v0.0.7    2013-12-11 20:51:42 UTC
 
   - Softening of expressions: graceful degrading to "undef"

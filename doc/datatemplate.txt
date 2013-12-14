@@ -87,10 +87,14 @@ Alternatives:
 
 So: doable, but a bit iffy, and not necessary. Maybe syntactic sugar.
 
+Conditional keys as syntactic sugar for an else-less case:
+
+{ '?if' => { key => 'value' }, other => 'this stays' }
+
 SWITCHES:
 
-Like lists, but as hashes!
-{ '?given' => { when1 => a, when2 => b, when3 => c, '?' => default } }
+Use our "switch" sigil, not '?'. That remains free for our "conditional keys".
+{ '|given' => { when1 => a, when2 => b, when3 => c, '?' => default } }
 -> a or b or c or default
 If nothing matches? Like the 'empty else' above, I guess.
 
