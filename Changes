@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+v0.0.8    2013-12-14 21:05:01 UTC
+
   DataTemplate changes:
   - Switch construct uses '|' instead of '?'
   - "Conditional key" as syntactic sugar for conditional hash
