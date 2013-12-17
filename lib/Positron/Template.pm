@@ -182,6 +182,8 @@ sub _process_element {
         return $self->_process_switch($node, $environment, $sigil, $quant, $tail);
     } elsif ($sigil eq '/') {
         return $self->_process_structure_comment($node, $environment, $sigil, $quant, $tail);
+    } elsif ($sigil eq '.') {
+        return $self->_process_include($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
         $handler->push_contents( $new_node, map { $self->_process_element($_, $environment) } $handler->list_contents($node));
@@ -281,6 +283,32 @@ sub _process_structure_comment {
     } else {
         return; # nothing
     }
+}
+
+sub _process_include {
+	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
+	my $handler = $self->{'handler'};
+
+    my @contents = ();
+
+    my $filename = Positron::Expression::evaluate($tail, $environment);
+    my $filepath = undef;
+    foreach my $include_path (@{$self->{'include_paths'}}) {
+        if (-r $include_path . $filename) {
+            $filepath = $include_path . $filename;
+        }
+    }
+    if (not defined $filepath) {
+        croak "Could not find $filename (from $tail) for inclusion";
+    }
+
+
+    # automatically die if we can't read this
+    @contents = $handler->parse_file($filepath);
+    @contents = map { $self->_process_element($_, $environment) } @contents;
+
+    my $keep = ($quant eq '+');
+    return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
 }
 
 
