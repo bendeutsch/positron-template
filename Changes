@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+v0.1.0    2013-12-19 21:04:44 UTC
+
   Positron::Template:
   - First running version of Positron::Template
   - Use ArrayRef handler for now; others are not implemented
