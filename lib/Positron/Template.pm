@@ -184,6 +184,8 @@ sub _process_element {
         return $self->_process_structure_comment($node, $environment, $sigil, $quant, $tail);
     } elsif ($sigil eq '.') {
         return $self->_process_include($node, $environment, $sigil, $quant, $tail);
+    } elsif ($sigil eq ':') {
+        return $self->_process_wrap($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
         $handler->push_contents( $new_node, map { $self->_process_element($_, $environment) } $handler->list_contents($node));
@@ -307,6 +309,49 @@ sub _process_include {
     @contents = $handler->parse_file($filepath);
     @contents = map { $self->_process_element($_, $environment) } @contents;
 
+    my $keep = ($quant eq '+');
+    return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
+}
+
+sub _process_wrap {
+	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
+	my $handler = $self->{'handler'};
+
+    my @contents = ();
+
+    if ($tail =~ m{ \S }xms) {
+        # filename, read that and include "us".
+        my $filename = Positron::Expression::evaluate($tail, $environment);
+        my $filepath = undef;
+        foreach my $include_path (@{$self->{'include_paths'}}) {
+            if (-r $include_path . $filename) {
+                $filepath = $include_path . $filename;
+            }
+        }
+        if (not defined $filepath) {
+            croak "Could not find $filename (from $tail) for wrapping";
+        }
+
+        # Resolve now; also allows clone_and_resolve to clear sigils to defeat recursion
+        @contents = map { $self->_process_element($_, $environment) } $handler->list_contents($node);
+        # only quant-less versions pass the parent
+        my @passed_nodes = $quant ? @contents : $self->_clone_and_resolve($node, $environment, @contents);
+
+        $environment = Positron::Environment->new({':' => [ @passed_nodes ]}, { parent => $environment, immutable => 0});
+
+        # automatically die if we can't read this
+        @contents = $handler->parse_file($filepath);
+        @contents = map { $self->_process_element($_, $environment) } @contents;
+
+    } else {
+        # inclusion marker
+        my $passed_nodes = $environment->get(':') || [];
+        # On error, just kill all (warn, maybe?)
+        # Remember: already resolved!
+        @contents = @$passed_nodes;
+    }
+
+    # this works for both cases!
     my $keep = ($quant eq '+');
     return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
 }
