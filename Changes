@@ -1,5 +1,8 @@
 {{$NEXT}}
 
+  Positron::Template changes:
+  - Environment inclusion sigil ','
+
 v0.1.2    2014-01-07 20:42:26 UTC
 
   Positron::Handler::Template changes:

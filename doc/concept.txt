@@ -496,6 +496,19 @@ fake content instead.
 
 {,dom},{;dom} - include the DOM nodes passed in the env instead.
 (still use {:} as marker) This can be a single node, or a list.
+How a list, without colliding with the ArrayRef handler?
+Seems it must always be a list? No, technically, we can handle this.
+We may eventually need a 'looks_like_element' function in the handlers, though.
+
+Combining Includes and Wraps:
+
+Actually, wrapping is a strictly more powerful method of including.
+In theory, we can do away with including and just wrap.
+This would help decide whether or not to evaluate code as a template.
+Just use '.' and ',' for non-evaluating, and ':' and ';' for evaluating.
+Problems: marking intent, and performance.
+
+Alternative: other two quantifiers for evaluating ','.
 
 Guts:
 One problem: in order to be valid (X)HTML, the included files need to be
