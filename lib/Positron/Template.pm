@@ -184,7 +184,7 @@ sub _process_element {
         return $self->_process_structure_comment($node, $environment, $sigil, $quant, $tail);
     } elsif ($sigil ~~ ['.', ',']) {
         return $self->_process_include($node, $environment, $sigil, $quant, $tail);
-    } elsif ($sigil eq ':') {
+    } elsif ($sigil ~~ [':', ';']) {
         return $self->_process_wrap($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
@@ -334,6 +334,8 @@ sub _process_include {
     return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
 }
 
+# TODO: Refactor. Either extract the parts that are common between _include and
+#       _wrap, or just push them both together in one function.
 sub _process_wrap {
 	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
 	my $handler = $self->{'handler'};
@@ -341,16 +343,40 @@ sub _process_wrap {
     my @contents = ();
 
     if ($tail =~ m{ \S }xms) {
-        # filename, read that and include "us".
-        my $filename = Positron::Expression::evaluate($tail, $environment);
-        my $filepath = undef;
-        foreach my $include_path (@{$self->{'include_paths'}}) {
-            if (-r $include_path . $filename) {
-                $filepath = $include_path . $filename;
+
+        my @wrapping_contents;
+        if ($sigil eq ':') {
+            # filename, read that and include "us".
+            my $filename = Positron::Expression::evaluate($tail, $environment);
+            my $filepath = undef;
+            foreach my $include_path (@{$self->{'include_paths'}}) {
+                if (-r $include_path . $filename) {
+                    $filepath = $include_path . $filename;
+                }
             }
-        }
-        if (not defined $filepath) {
-            croak "Could not find $filename (from $tail) for wrapping";
+            if (not defined $filepath) {
+                croak "Could not find $filename (from $tail) for wrapping";
+            }
+            # automatically die if we can't read this
+            @wrapping_contents = $handler->parse_file($filepath);
+        } else {
+            # from env
+            my $env_contents = Positron::Expression::evaluate($tail, $environment);
+            if ($env_contents) {
+                if (ref($env_contents) eq 'ARRAY') {
+                    # special case: can't allow ['a', 'text'], must be [['a', 'text']], sorry
+                    if ($handler->isa('Positron::Handler::ArrayRef') and not ref($env_contents->[0])) {
+                        @wrapping_contents = ($env_contents);
+                    } else {
+                        @wrapping_contents = @$env_contents;
+                    }
+                } else {
+                    @wrapping_contents = ($env_contents);
+                }
+            } else {
+                # warn?
+                @wrapping_contents = ();
+            }
         }
 
         # TODO: resolve later? We'd need to clone $node and remove structure sigils to defeat recursion
@@ -361,8 +387,7 @@ sub _process_wrap {
 
         $environment = Positron::Environment->new({':' => [ @passed_nodes ]}, { parent => $environment, immutable => 0});
 
-        # automatically die if we can't read this
-        @contents = $handler->parse_file($filepath);
+        @contents = @wrapping_contents;
         @contents = map { $self->_process_element($_, $environment) } @contents;
 
     } else {
