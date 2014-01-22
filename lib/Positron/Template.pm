@@ -186,6 +186,8 @@ sub _process_element {
         return $self->_process_include($node, $environment, $sigil, $quant, $tail);
     } elsif ($sigil ~~ [':', ';']) {
         return $self->_process_wrap($node, $environment, $sigil, $quant, $tail);
+    } elsif ($sigil eq '^') {
+        return $self->_process_function($node, $environment, $sigil, $quant, $tail);
     } else {
         my $new_node = $handler->shallow_clone($node);
         $handler->push_contents( $new_node, map { $self->_process_element($_, $environment) } $handler->list_contents($node));
@@ -403,6 +405,28 @@ sub _process_wrap {
     return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
 }
 
+sub _process_function {
+	my ($self, $node, $environment, $sigil, $quant, $tail) = @_;
+	my $handler = $self->{'handler'};
+    my $function = Positron::Expression::evaluate($tail, $environment);
+
+    # The "self" node can be part of the arguments (quant ''), receive the results of the function
+    # (quant '+'), or be dropped altogether (quant '-').
+	my $keep = ($quant eq '+');
+    my $pass_self = (not $keep and $quant ne '-');
+
+	my @contents = ();
+    # Need these in any case:
+    @contents = map { $self->_process_element($_, $environment) } $handler->list_contents($node);
+    if ($pass_self) {
+        # we could also need to pass "self".
+        @contents = $self->_clone_and_resolve($node, $environment, @contents);
+    }
+
+    @contents = $function->(@contents);
+	return ($keep) ? ($self->_clone_and_resolve($node, $environment, @contents)) : @contents;
+}
+
 
 sub _make_finder {
     my ($self, $sigils) = @_;
@@ -440,7 +464,7 @@ sub _handler_for {
 sub _get_structure_sigil {
     my ($self, $node) = @_;
     my $handler = $self->{'handler'};
-    my $structure_finder = $self->_make_finder('@?!/.:,;|');
+    my $structure_finder = $self->_make_finder('@?!/.:,;|^');
     foreach my $attr ($handler->list_attributes($node)) {
         my $value = $handler->get_attribute($node, $attr);
         if ($value =~ m{ $structure_finder }xms) {
@@ -454,7 +478,7 @@ sub _remove_structure_sigils {
     my ($self, $node) = @_;
     my $handler = $self->{'handler'};
     # NOTE: we remove '=' here as well, even though it's not a structure sigil!
-    my $structure_finder = $self->_make_finder('@?!/.:,;=|');
+    my $structure_finder = $self->_make_finder('@?!/.:,;=|^');
     foreach my $attr ($handler->list_attributes($node)) {
         my $value = $handler->get_attribute($node, $attr);
         my $did_change = ($value =~ s{ $structure_finder }{}xmsg);

@@ -540,6 +540,7 @@ Functions:
           env), and replace this node with the node(s) it returns.
 There is no quantifier, the func needs to deal with this.
 However, any quantifier is read and passed as an argument to the function.
+Update: read below. Might as well offer this.
 
 I would love to use the '&' sigil for this, but this is not valid XML!
 '!' is used for 'if not', but '=' seems good (and many languages use this)
@@ -567,6 +568,21 @@ on functions: you can't just call a function which reads the environment and
 does everything for you - that would recreate the templating system.
 Disallowing the environment makes it clear that the function is not expected
 to have any side effects, and is to work locally.
+
+Quantifier options:
+Maybe we can offer the following quantifiers, similar to wrapping:
+'+' keep the node, pass its children
+'-' remove the node, pass its children
+This would require either n-ary functions, or passing all nodes in an array
+reference. n-ary functions interfere with further options, such as the handler
+or the template object.
+Or: first argument is an 'options' hash reference? Yes, this seems viable.
+So: first argument '\%options', then '@nodes'
+Or: first argument is the template object, which contains a handler.
+The quantifier is no longer passed.
+(Just hope that the template parsing is reentrant!)
+Or: no passing of template or handlers. I find no reason for it.
+In rare cases, pass it via closures.
 
 Assignment:
 
